@@ -116,3 +116,10 @@ class FocusSessionRead(BaseModel):
     duration_seconds: int | None
 
     model_config = {"from_attributes": True}
+
+
+class DailyInsightRead(BaseModel):
+    date: str
+    headline: str
+    summary: str
+    recommendations: list[str]

@@ -71,3 +71,10 @@ export type FocusSession = {
   ended_at: string | null;
   duration_seconds: number | null;
 };
+
+export type DailyInsight = {
+  date: string;
+  headline: string;
+  summary: string;
+  recommendations: string[];
+};

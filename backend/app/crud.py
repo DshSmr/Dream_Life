@@ -250,3 +250,52 @@ def stop_focus_session(db: Session, session_id: str) -> FocusSession | None:
 def list_focus_sessions(db: Session, limit: int = 20, offset: int = 0) -> list[FocusSession]:
     stmt = select(FocusSession).order_by(desc(FocusSession.started_at)).offset(offset).limit(limit)
     return list(db.execute(stmt).scalars().all())
+
+
+def get_daily_insight(db: Session, target_date: date) -> dict:
+    summary = get_daily_summary(db, target_date)
+    day_start = datetime.combine(target_date, time.min).replace(tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+
+    focus_duration_stmt = select(func.coalesce(func.sum(FocusSession.duration_seconds), 0)).where(
+        FocusSession.started_at >= day_start,
+        FocusSession.started_at < day_end,
+    )
+    focus_seconds = int(db.execute(focus_duration_stmt).scalar_one() or 0)
+    focus_minutes = max(0, round(focus_seconds / 60))
+
+    tasks_completed = int(summary["tasks_completed"])
+    balance_delta = float(summary["balance_delta"])
+    cleanings_done = int(summary["cleanings_done"])
+
+    if tasks_completed >= 3 and focus_minutes >= 90:
+        headline = "Strong productive day"
+    elif tasks_completed == 0 and focus_minutes < 30:
+        headline = "Light execution day"
+    else:
+        headline = "Steady progress day"
+
+    summary_text = (
+        f"You completed {tasks_completed} tasks, logged {focus_minutes} minutes of focus time, "
+        f"and finished {cleanings_done} cleaning actions. "
+        f"Your financial balance changed by {balance_delta:.2f} today."
+    )
+
+    recommendations: list[str] = []
+    if focus_minutes < 60:
+        recommendations.append("Schedule one 25-minute focus block for your top task tomorrow.")
+    if tasks_completed == 0:
+        recommendations.append("Start the day by finishing one small task to build momentum.")
+    if cleanings_done == 0:
+        recommendations.append("Mark one cleaning zone as done to keep home maintenance consistent.")
+    if balance_delta < 0:
+        recommendations.append("Review expenses and set a spending limit for one category tomorrow.")
+    if not recommendations:
+        recommendations.append("Keep the same routine and repeat your current workflow tomorrow.")
+
+    return {
+        "date": str(summary["date"]),
+        "headline": headline,
+        "summary": summary_text,
+        "recommendations": recommendations,
+    }

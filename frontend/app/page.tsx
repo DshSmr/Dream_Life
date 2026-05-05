@@ -6,6 +6,7 @@ import {
   DailySummary,
   EventItem,
   EventType,
+  DailyInsight,
   FinanceKind,
   FinanceTransaction,
   CleaningZone,
@@ -29,6 +30,7 @@ export default function HomePage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [summary, setSummary] = useState<DailySummary | null>(null);
+  const [insight, setInsight] = useState<DailyInsight | null>(null);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [cleaningZones, setCleaningZones] = useState<CleaningZone[]>([]);
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
@@ -77,6 +79,14 @@ export default function HomePage() {
     setSummary(await response.json());
   }
 
+  async function loadInsight() {
+    const response = await fetch(`${API_URL}/analytics/daily-insight`, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Failed to fetch daily insight");
+    }
+    setInsight(await response.json());
+  }
+
   async function loadTransactions() {
     const response = await fetch(`${API_URL}/finance/transactions?limit=10`, { cache: "no-store" });
     if (!response.ok) {
@@ -102,7 +112,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    Promise.all([loadEvents(), loadTasks(), loadSummary(), loadTransactions(), loadCleaningZones(), loadFocusSessions()]).catch((err: Error) =>
+    Promise.all([loadEvents(), loadTasks(), loadSummary(), loadInsight(), loadTransactions(), loadCleaningZones(), loadFocusSessions()]).catch((err: Error) =>
       setError(err.message)
     );
   }, [taskFilter]);
@@ -175,7 +185,7 @@ export default function HomePage() {
       return;
     }
 
-    await Promise.all([loadTasks(), loadEvents(), loadSummary()]);
+    await Promise.all([loadTasks(), loadEvents(), loadSummary(), loadInsight()]);
   }
 
   async function onCreateTransaction(event: FormEvent<HTMLFormElement>) {
@@ -212,7 +222,7 @@ export default function HomePage() {
       setFinanceAmount("");
       setFinanceCategory("");
       setFinanceNote("");
-      await Promise.all([loadTransactions(), loadEvents(), loadSummary()]);
+      await Promise.all([loadTransactions(), loadEvents(), loadSummary(), loadInsight()]);
     } catch {
       setError("Cannot connect to API. Please check backend server.");
     }
@@ -258,7 +268,7 @@ export default function HomePage() {
       setError("Failed to mark cleaning as done");
       return;
     }
-    await Promise.all([loadCleaningZones(), loadEvents(), loadSummary()]);
+    await Promise.all([loadCleaningZones(), loadEvents(), loadSummary(), loadInsight()]);
   }
 
   async function startFocusSession() {
@@ -427,6 +437,32 @@ export default function HomePage() {
       </form>
 
       {error && <p className="mt-4 text-[#f7b0a2]">{error}</p>}
+
+      <section className={`mt-8 rounded-2xl border p-5 ${panelClass}`}>
+        <h2 className="text-xl font-semibold">AI daily insight (MVP)</h2>
+        {insight ? (
+          <div className="mt-3 space-y-3">
+            <article className="rounded-xl border border-[#313544] bg-[#202331] p-3">
+              <p className={`text-sm ${mutedClass}`}>Headline</p>
+              <p className="font-medium text-[#f2ead9]">{insight.headline}</p>
+            </article>
+            <article className="rounded-xl border border-[#313544] bg-[#202331] p-3">
+              <p className={`text-sm ${mutedClass}`}>Summary</p>
+              <p className="text-[#f2ead9]">{insight.summary}</p>
+            </article>
+            <article className="rounded-xl border border-[#313544] bg-[#202331] p-3">
+              <p className={`text-sm ${mutedClass}`}>Recommendations</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-[#f2ead9]">
+                {insight.recommendations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          </div>
+        ) : (
+          <p className={`mt-3 ${mutedClass}`}>Loading insight...</p>
+        )}
+      </section>
 
       <section className={`mt-8 rounded-2xl border p-5 ${panelClass}`}>
         <h2 className="text-xl font-semibold">Daily summary</h2>

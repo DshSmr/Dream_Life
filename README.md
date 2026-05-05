@@ -34,6 +34,7 @@ API endpoints:
 - `GET /tasks?limit=20&offset=0&status=todo`
 - `PATCH /tasks/{task_id}/status`
 - `GET /analytics/daily-summary`
+- `GET /analytics/daily-insight`
 - `POST /finance/transactions`
 - `GET /finance/transactions?limit=10&kind=expense`
 - `POST /cleaning/zones`
@@ -106,3 +107,9 @@ This makes your project production-friendly because every environment
 - Added Focus Sessions MVP (`start`, `stop`, `list`).
 - Each focus action also creates events (`focus_started`, `focus_ended`).
 - Added Focus Sessions block to frontend dashboard.
+
+## Stage 1.7 notes
+
+- Added AI-like daily insight endpoint (`/analytics/daily-insight`) using rule-based logic.
+- Insight returns a headline, human-readable summary, and actionable recommendations.
+- Added "AI daily insight" section to frontend.
