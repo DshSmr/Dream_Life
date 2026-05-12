@@ -1,6 +1,31 @@
 /** Default matches README / uvicorn --port 8765 (port 8000 often triggers WinError 10013 on Windows). */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8765";
 
+/**
+ * `fetch` throws TypeError/Error with "Failed to fetch" when the server is down, URL is wrong, or CORS blocks the response.
+ */
+export function describeFetchFailure(reason: unknown): string {
+  const raw =
+    reason instanceof TypeError
+      ? reason.message
+      : reason instanceof Error
+        ? reason.message
+        : String(reason);
+  if (
+    raw === "Failed to fetch" ||
+    raw.startsWith("NetworkError") ||
+    raw === "Load failed" ||
+    raw === "The Internet connection appears to be offline."
+  ) {
+    return (
+      `Cannot reach the Life OS API at ${API_URL}. ` +
+      `Start the backend (from the backend folder): python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8765. ` +
+      `If the UI uses a different API host, set NEXT_PUBLIC_API_URL in frontend/.env.local and restart Next.js.`
+    );
+  }
+  return raw;
+}
+
 export type EventType =
   | "work_started"
   | "focus_started"
@@ -112,6 +137,33 @@ export type DailyInsight = {
   headline: string;
   summary: string;
   recommendations: string[];
+};
+
+/** POST/GET /ai/daily-review and /ai/reviews — structured narrative review (persisted per day). */
+export type DailyReview = {
+  date: string;
+  title: string;
+  summary: string;
+  wins: string[];
+  concerns: string[];
+  tomorrowPlan: string[];
+  fallback: boolean;
+  id?: string;
+  created_at?: string | null;
+  /** True when returned from DB without regenerating. */
+  from_storage?: boolean;
+};
+
+/** POST /ai/monthly-review — on-demand month narrative (not persisted). */
+export type MonthlyReview = {
+  monthLabel: string;
+  title: string;
+  summary: string;
+  wins: string[];
+  risks: string[];
+  patterns: string[];
+  nextMonthFocus: string[];
+  fallback: boolean;
 };
 
 export type PomodoroSession = {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, EventItem } from "@/lib/api";
+import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
 import { localCalendarDayKeyFromDate } from "@/lib/datetime";
 import { buildDailyTimeline, type TimelineRow } from "@/lib/timeline";
 import { ui } from "@/lib/ui";
@@ -59,7 +60,7 @@ export default function DailyTimelinePage() {
       .then(async (res) => {
         if (!res.ok) throw new Error("Failed to load events");
         const raw = (await res.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
-        setEvents(raw.filter((e) => e.type !== "task_in_progress") as EventItem[]);
+        setEvents(normalizeAnalyticsEvents(raw));
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));

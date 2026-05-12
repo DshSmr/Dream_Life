@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routers.ai import router as ai_router
 from app.routers.analytics import router as analytics_router
 from app.routers.cleaning import router as cleaning_router
 from app.routers.events import router as events_router
@@ -20,6 +21,8 @@ app.add_middleware(
         "http://localhost:3001",
         "http://127.0.0.1:3001",
     ],
+    # Next.js may pick another port (e.g. 3002); LAN dev uses 127.0.0.1 — keep explicit list + regex for local dev.
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,6 +34,7 @@ def health():
     return {"status": "ok"}
 
 
+app.include_router(ai_router)
 app.include_router(events_router)
 app.include_router(iot_router)
 app.include_router(tasks_router)

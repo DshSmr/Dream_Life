@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,3 +104,19 @@ class DailySnapshot(Base):
     system_state: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class AIReview(Base):
+    """Persisted structured daily AI review (one row per UTC calendar day)."""
+
+    __tablename__ = "ai_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    review_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    wins: Mapped[list] = mapped_column(JSONB, nullable=False)
+    concerns: Mapped[list] = mapped_column(JSONB, nullable=False)
+    tomorrow_plan: Mapped[list] = mapped_column(JSONB, nullable=False)
+    fallback: Mapped[bool] = mapped_column(nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

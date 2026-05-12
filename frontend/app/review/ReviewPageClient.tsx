@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, CleaningZone, EventItem, FinanceRangeSummary, FinanceTransaction } from "@/lib/api";
+import { computeEventCountsByType, computeProductivityScore, computeWeeklyStats } from "@/lib/analytics/fromEvents";
+import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
 import { computeHomeHealthScore } from "@/lib/cleaningHealth";
 import { getLocalWeekRangeIso } from "@/lib/datetime";
 import { ui } from "@/lib/ui";
-import {
-  countEventsByType,
-  generateWeeklyInsights,
-  sumFocusMinutesInWeek,
-  topExpenseCategoryInWeek
-} from "@/lib/weeklyReviewInsights";
+import { generateWeeklyInsights, topExpenseCategoryInWeek } from "@/lib/weeklyReviewInsights";
 
 function formatEur(value: number): string {
   return `€${value.toFixed(2)}`;
@@ -59,7 +56,7 @@ export default function WeeklyReviewPage() {
         if (!txRes.ok) throw new Error("Failed to load transactions");
 
         const rawEv = (await evRes.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
-        setEvents(rawEv.filter((e) => e.type !== "task_in_progress") as EventItem[]);
+        setEvents(normalizeAnalyticsEvents(rawEv));
         setZones(await zRes.json());
         setFinanceSummary(await finRes.json());
         setExpenseRows(await txRes.json());
@@ -68,19 +65,37 @@ export default function WeeklyReviewPage() {
       .finally(() => setLoading(false));
   }, [from, to]);
 
-  const productivity = useMemo(() => {
-    const tasksDone = countEventsByType(events, ["task_completed"], weekFromMs, weekToMs);
-    const focusMin = sumFocusMinutesInWeek(events, weekFromMs, weekToMs);
-    const pomos = countEventsByType(events, ["pomodoro_completed"], weekFromMs, weekToMs);
-    return { tasksDone, focusMin, pomos };
-  }, [events, weekFromMs, weekToMs]);
+  // All productivity numbers below flow through `lib/analytics/fromEvents` so they stay consistent with the dashboard.
+  const weeklyStats = useMemo(
+    () => computeWeeklyStats(events, weekFromMs, weekToMs),
+    [events, weekFromMs, weekToMs]
+  );
+
+  const weekEventCounts = useMemo(
+    () => computeEventCountsByType(events, weekFromMs, weekToMs),
+    [events, weekFromMs, weekToMs]
+  );
+
+  const productivityScore = useMemo(
+    () => computeProductivityScore(events, zones, weekFromMs, weekToMs),
+    [events, zones, weekFromMs, weekToMs]
+  );
+
+  const productivity = useMemo(
+    () => ({
+      tasksDone: weeklyStats.tasksCompleted,
+      focusMin: weeklyStats.focusMinutes,
+      pomos: weekEventCounts.pomodoro_completed ?? 0
+    }),
+    [weeklyStats, weekEventCounts]
+  );
 
   const cleaning = useMemo(() => {
-    const cleaned = countEventsByType(events, ["cleaning_done"], weekFromMs, weekToMs);
+    const cleaned = weekEventCounts.cleaning_done ?? 0;
     const overdue = zones.filter((z) => z.status === "overdue");
     const health = computeHomeHealthScore(zones);
     return { cleaned, overdueCount: overdue.length, overdueNames: overdue.map((z) => z.name), health };
-  }, [events, zones, weekFromMs, weekToMs]);
+  }, [weekEventCounts, zones]);
 
   const financeBlock = useMemo(() => {
     const top = topExpenseCategoryInWeek(expenseRows, weekFromMs, weekToMs);
@@ -120,6 +135,15 @@ export default function WeeklyReviewPage() {
           <div className="mt-8 space-y-8">
             <section className="rounded-2xl border border-[#2A2F36] bg-[#0F1318] p-6">
               <h2 className="text-lg font-semibold text-white">Productivity summary</h2>
+              <p className={`mt-1 text-sm ${ui.mutedText}`}>
+                Weekly productivity score (events-based):{" "}
+                <span className="font-semibold tabular-nums text-[#C6A36B]">{productivityScore.score}</span>
+                <span className={ui.mutedText}>
+                  {" "}
+                  (tasks + focus minutes − overdue zones: {productivityScore.completedTasks} +{" "}
+                  {productivityScore.focusMinutes} − {productivityScore.overdueCleaningZones})
+                </span>
+              </p>
               <dl className="mt-4 grid gap-4 sm:grid-cols-3">
                 <div>
                   <dt className={`text-sm ${ui.mutedText}`}>Tasks completed this week</dt>

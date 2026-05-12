@@ -1,4 +1,10 @@
+/**
+ * Copy-only helpers for the weekly review screen.
+ *
+ * Numeric rollups (counts, focus minutes) delegate to `@/lib/analytics/fromEvents` so we do not fork formulas.
+ */
 import type { CleaningZone, EventItem, EventType } from "@/lib/api";
+import { countEventsByTypesInRange, filterEventsInRange, sumFocusMinutes } from "@/lib/analytics/fromEvents";
 import { localDateKeyFromIso } from "@/lib/datetime";
 
 export type WeeklyReviewInsightInput = {
@@ -10,13 +16,8 @@ export type WeeklyReviewInsightInput = {
   topExpenseAmount: number;
 };
 
-function eventInWeek(createdAt: string, weekFromMs: number, weekToMs: number): boolean {
-  const t = new Date(createdAt).getTime();
-  return !Number.isNaN(t) && t >= weekFromMs && t < weekToMs;
-}
-
 function filterWeekEvents(events: EventItem[], weekFromMs: number, weekToMs: number): EventItem[] {
-  return events.filter((e) => eventInWeek(e.created_at, weekFromMs, weekToMs));
+  return filterEventsInRange(events, weekFromMs, weekToMs);
 }
 
 /** Tasks vs focus by local day (Mon–Sun window). */
@@ -115,36 +116,23 @@ export function countEventsByType(
   weekFromMs: number,
   weekToMs: number
 ): number {
-  const set = new Set(types);
-  return filterWeekEvents(events, weekFromMs, weekToMs).filter((e) => set.has(e.type)).length;
+  return countEventsByTypesInRange(events, types, weekFromMs, weekToMs);
 }
 
 export function sumFocusMinutesInWeek(events: EventItem[], weekFromMs: number, weekToMs: number): number {
-  let seconds = 0;
-  for (const e of filterWeekEvents(events, weekFromMs, weekToMs)) {
-    if (e.type === "focus_session_completed") {
-      const p = e.payload as Record<string, unknown>;
-      const sec = Number(p.duration_seconds ?? 0);
-      if (Number.isFinite(sec) && sec > 0) seconds += sec;
-      else seconds += Number(p.duration_minutes ?? 0) * 60;
-    } else if (e.type === "focus_ended") {
-      const p = e.payload as Record<string, unknown>;
-      seconds += Number(p.duration_seconds ?? 0);
-    }
-  }
-  return Math.max(0, Math.round(seconds / 60));
+  return sumFocusMinutes(filterWeekEvents(events, weekFromMs, weekToMs));
 }
 
-export function topExpenseCategoryInWeek(
+export function topExpenseCategoryInRange(
   transactions: Array<{ kind: string; category: string; amount: number; created_at: string }>,
-  weekFromMs: number,
-  weekToMs: number
+  fromMs: number,
+  toMs: number
 ): { category: string; total: number } | null {
   const sums = new Map<string, number>();
   for (const tx of transactions) {
     if (tx.kind !== "expense") continue;
     const t = new Date(tx.created_at).getTime();
-    if (Number.isNaN(t) || t < weekFromMs || t >= weekToMs) continue;
+    if (Number.isNaN(t) || t < fromMs || t >= toMs) continue;
     const cat = tx.category.trim() || "Uncategorized";
     sums.set(cat, (sums.get(cat) ?? 0) + tx.amount);
   }
@@ -153,4 +141,12 @@ export function topExpenseCategoryInWeek(
     if (!best || total > best.total) best = { category, total };
   }
   return best;
+}
+
+export function topExpenseCategoryInWeek(
+  transactions: Array<{ kind: string; category: string; amount: number; created_at: string }>,
+  weekFromMs: number,
+  weekToMs: number
+): { category: string; total: number } | null {
+  return topExpenseCategoryInRange(transactions, weekFromMs, weekToMs);
 }

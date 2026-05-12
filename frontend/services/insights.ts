@@ -15,7 +15,10 @@ export type RuleInsight = {
 export type RuleInsightInput = {
   focusSessions: FocusSession[];
   cleaningZones: CleaningZone[];
-  /** Total expenses for "today" in local calendar (use API aggregate when available). */
+  /**
+   * Expense signal for "today" (local calendar). Prefer `computeDailyStats(...).expensesTotal` from the event
+   * stream when callers already load events; finance API totals are equivalent if every expense emits `expense_added`.
+   */
   expensesTodayTotal: number;
   tasks: TaskItem[];
   now?: Date;

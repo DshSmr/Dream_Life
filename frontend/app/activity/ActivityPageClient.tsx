@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { API_URL, EventItem, EventType } from "@/lib/api";
+import { API_URL, describeFetchFailure, EventItem, EventType } from "@/lib/api";
+import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
 import { EventDetailModal } from "@/components/EventDetailModal";
 import { formatTimeLocalHm } from "@/lib/datetime";
 import { formatEventTypeTitle } from "@/lib/eventDetail";
@@ -124,22 +125,17 @@ export default function ActivityPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [detailEvent, setDetailEvent] = useState<EventItem | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const apiConnectionError = "Cannot connect to API. Please check backend server.";
 
   useEffect(() => {
     async function loadEvents() {
       const response = await fetch(`${API_URL}/events?limit=100`, { cache: "no-store" });
       if (!response.ok) throw new Error("Failed to fetch activity log");
       const rawItems = (await response.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
-      setEvents(rawItems.filter((item) => item.type !== "task_in_progress") as EventItem[]);
+      setEvents(normalizeAnalyticsEvents(rawItems));
     }
 
-    loadEvents().catch((err: Error) => {
-      if (err.message === "Failed to fetch") {
-        setError(apiConnectionError);
-        return;
-      }
-      setError(err.message);
+    loadEvents().catch((err: unknown) => {
+      setError(describeFetchFailure(err));
     });
   }, []);
 

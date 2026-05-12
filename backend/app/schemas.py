@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 EventType = Literal[
@@ -141,6 +141,51 @@ class DailyInsightRead(BaseModel):
     headline: str
     summary: str
     recommendations: list[str]
+
+
+class DailyReviewRequest(BaseModel):
+    """UTC calendar date, consistent with `/analytics/daily-summary`. Defaults to server today."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    # Field name cannot be `date` — it shadows the `date` type in this scope.
+    review_day: Optional[date] = Field(default=None, alias="date")
+    regenerate: bool = False
+
+
+class DailyReviewRead(BaseModel):
+    date: str
+    title: str
+    summary: str
+    wins: list[str]
+    concerns: list[str]
+    tomorrowPlan: list[str]
+    fallback: bool = False
+    id: str | None = None
+    created_at: datetime | None = None
+    from_storage: bool = False
+
+
+class MonthlyReviewRequest(BaseModel):
+    """
+    Half-open window [monthFrom, monthTo) in ISO-8601, aligned with the browser's `getLocalMonthRangeIso`.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    month_from: str = Field(..., alias="monthFrom")
+    month_to: str = Field(..., alias="monthTo")
+
+
+class MonthlyReviewRead(BaseModel):
+    monthLabel: str
+    title: str
+    summary: str
+    wins: list[str]
+    risks: list[str]
+    patterns: list[str]
+    nextMonthFocus: list[str]
+    fallback: bool = False
 
 
 class PomodoroSessionCreate(BaseModel):

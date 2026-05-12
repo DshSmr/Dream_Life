@@ -35,3 +35,22 @@ export function computeHomeHealthScore(zones: CleaningZone[]): HomeHealthScore |
 
   return { scorePercent, statusLabel, level };
 }
+
+/** Among overdue zones, pick the one farthest past its due window (by `last_cleaned_at` + frequency). */
+export function mostOverdueZone(zones: CleaningZone[]): CleaningZone | null {
+  const overdue = zones.filter((z) => z.status === "overdue");
+  if (overdue.length === 0) return null;
+  const now = Date.now();
+  let worst: CleaningZone | null = null;
+  let worstLateness = -Infinity;
+  for (const z of overdue) {
+    const lastMs = z.last_cleaned_at ? new Date(z.last_cleaned_at).getTime() : 0;
+    const dueMs = lastMs + z.frequency_days * 86_400_000;
+    const lateness = now - dueMs;
+    if (lateness > worstLateness) {
+      worstLateness = lateness;
+      worst = z;
+    }
+  }
+  return worst;
+}

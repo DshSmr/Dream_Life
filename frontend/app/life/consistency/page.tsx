@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, EventItem } from "@/lib/api";
+import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
 import { computeConsistencyStreaks } from "@/lib/consistency";
 import { ui } from "@/lib/ui";
 
 function streakDaysPhrase(days: number): string {
   return days === 1 ? "1 day" : `${days} days`;
-}
-
-function normalizeEventList(rawItems: Array<Omit<EventItem, "type"> & { type: string }>): EventItem[] {
-  return rawItems.filter((item) => item.type !== "task_in_progress") as EventItem[];
 }
 
 export default function ConsistencyPage() {
@@ -22,7 +19,7 @@ export default function ConsistencyPage() {
       .then(async (res) => {
         if (!res.ok) throw new Error("events");
         const rawItems = (await res.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
-        setEvents(normalizeEventList(rawItems));
+        setEvents(normalizeAnalyticsEvents(rawItems));
       })
       .catch(() => setError("Could not load events for streaks."));
   }, []);

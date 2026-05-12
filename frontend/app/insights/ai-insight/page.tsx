@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { API_URL, CleaningZone, DailyInsight, DailySummary, FinanceRangeSummary, FocusSession, TaskItem } from "@/lib/api";
-import { formatDateFiNumeric, getLocalDayRangeIso } from "@/lib/datetime";
+import { API_URL, CleaningZone, DailyInsight, DailySummary, EventItem, FinanceRangeSummary, FocusSession, TaskItem } from "@/lib/api";
+import { computeDailyStats } from "@/lib/analytics/fromEvents";
+import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
+import { formatDateFiNumeric, getLocalDayRangeIso, localCalendarDayKeyFromDate } from "@/lib/datetime";
 import { ui } from "@/lib/ui";
 import { Badge } from "@/components/ui/badge";
 import { generateRuleInsights, type RuleInsight } from "@/services/insights";
@@ -21,6 +23,7 @@ export default function AiDailyInsightPage() {
   const [zones, setZones] = useState<CleaningZone[]>([]);
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
   const [financeToday, setFinanceToday] = useState<FinanceRangeSummary | null>(null);
+  const [analyticsEvents, setAnalyticsEvents] = useState<EventItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,28 +55,41 @@ export default function AiDailyInsightPage() {
       fetch(`${API_URL}/finance/summary/range?${qs}`, { cache: "no-store" }).then((r) => {
         if (!r.ok) throw new Error("finance");
         return r.json() as Promise<FinanceRangeSummary>;
+      }),
+      // Rule-based finance insight uses expense total from the event stream (events-first); summary API stays for display.
+      fetch(`${API_URL}/events?limit=500`, { cache: "no-store" }).then(async (r) => {
+        if (!r.ok) throw new Error("events");
+        const raw = (await r.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
+        return normalizeAnalyticsEvents(raw);
       })
     ])
-      .then(([s, i, t, z, f, fin]) => {
+      .then(([s, i, t, z, f, fin, ev]) => {
         setSummary(s);
         setInsight(i);
         setTasks(t);
         setZones(z);
         setFocusSessions(f);
         setFinanceToday(fin);
+        setAnalyticsEvents(ev);
       })
       .catch(() => setError("Could not load AI insight data."));
   }, []);
+
+  // Recomputes when the normalized event batch loads (same cap as other analytics screens).
+  const dailyStatsFromEvents = useMemo(
+    () => computeDailyStats(analyticsEvents, localCalendarDayKeyFromDate(new Date())),
+    [analyticsEvents]
+  );
 
   const ruleInsights = useMemo(
     () =>
       generateRuleInsights({
         focusSessions,
         cleaningZones: zones,
-        expensesTodayTotal: financeToday?.expense_total ?? 0,
+        expensesTodayTotal: dailyStatsFromEvents.expensesTotal,
         tasks
       }),
-    [focusSessions, zones, financeToday, tasks]
+    [focusSessions, zones, dailyStatsFromEvents.expensesTotal, tasks]
   );
 
   return (

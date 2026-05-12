@@ -4,7 +4,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.database import settings
-from app.models import CleaningZone, Event, FinanceTransaction, FocusSession, PomodoroSession, Task
+from app.models import AIReview, CleaningZone, Event, FinanceTransaction, FocusSession, PomodoroSession, Task
 from app.services.insights import build_daily_insight
 from app.schemas import (
     CleaningZoneCreate,
@@ -377,3 +377,53 @@ def complete_pomodoro_session(db: Session, session_id: str) -> PomodoroSession |
 def list_pomodoro_sessions(db: Session, limit: int = 20, offset: int = 0) -> list[PomodoroSession]:
     stmt = select(PomodoroSession).order_by(desc(PomodoroSession.started_at)).offset(offset).limit(limit)
     return list(db.execute(stmt).scalars().all())
+
+
+def get_ai_review_by_date(db: Session, review_date: date) -> AIReview | None:
+    stmt = select(AIReview).where(AIReview.review_date == review_date)
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def list_ai_reviews(db: Session, limit: int = 60, offset: int = 0) -> list[AIReview]:
+    stmt = (
+        select(AIReview).order_by(desc(AIReview.review_date)).offset(offset).limit(limit)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def upsert_ai_review(
+    db: Session,
+    *,
+    review_date: date,
+    title: str,
+    summary: str,
+    wins: list[str],
+    concerns: list[str],
+    tomorrow_plan: list[str],
+    fallback: bool,
+) -> AIReview:
+    """Single row per `review_date`; updates in place on regenerate (no duplicate dates)."""
+    existing = get_ai_review_by_date(db, review_date)
+    if existing:
+        existing.title = title
+        existing.summary = summary
+        existing.wins = wins
+        existing.concerns = concerns
+        existing.tomorrow_plan = tomorrow_plan
+        existing.fallback = fallback
+        db.commit()
+        db.refresh(existing)
+        return existing
+    row = AIReview(
+        review_date=review_date,
+        title=title,
+        summary=summary,
+        wins=wins,
+        concerns=concerns,
+        tomorrow_plan=tomorrow_plan,
+        fallback=fallback,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row

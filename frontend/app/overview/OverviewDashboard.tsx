@@ -4,13 +4,27 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { API_URL, CleaningZone, DailyInsight, DailySummary, EventItem, EventType, FinanceRangeSummary, FocusSession, TaskItem } from "@/lib/api";
+import {
+  API_URL,
+  CleaningZone,
+  DailyReview,
+  DailySummary,
+  describeFetchFailure,
+  EventItem,
+  EventType,
+  FinanceRangeSummary,
+  FocusSession,
+  TaskItem
+} from "@/lib/api";
 import { cleaningActionLabel, formatSignedEur, pickNextCleaningZone, pickTopPriorityTask } from "@/lib/commandCenter";
+import { computeDailyStats, countEventsOnLocalDay } from "@/lib/analytics/fromEvents";
+import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
 import {
   formatDateFiNumeric,
   formatDateTimeFiNumeric,
   getLocalDayRangeIso,
-  getLocalMonthRangeIso
+  getLocalMonthRangeIso,
+  localCalendarDayKeyFromDate
 } from "@/lib/datetime";
 import { ui } from "@/lib/ui";
 import { DashboardNotificationsSection } from "@/components/DashboardNotificationsSection";
@@ -83,7 +97,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
   const router = useRouter();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [summary, setSummary] = useState<DailySummary | null>(null);
-  const [insight, setInsight] = useState<DailyInsight | null>(null);
+  const [dailyReview, setDailyReview] = useState<DailyReview | null>(null);
+  const [dailyReviewLoading, setDailyReviewLoading] = useState(false);
+  const [dailyReviewError, setDailyReviewError] = useState<string | null>(null);
   const [eventType, setEventType] = useState<EventType>("work_started");
   const [payloadText, setPayloadText] = useState('{"note":"manual event"}');
   const [error, setError] = useState<string | null>(null);
@@ -97,29 +113,19 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
   const [recActionBusy, setRecActionBusy] = useState<string | null>(null);
   const [planCompletedIds, setPlanCompletedIds] = useState<Set<string>>(() => new Set());
   const showDebugTools = process.env.NODE_ENV === "development";
-  const apiConnectionError = "Cannot connect to API. Please check backend server.";
 
-  function normalizeEventList(rawItems: Array<Omit<EventItem, "type"> & { type: string }>): EventItem[] {
-    return rawItems.filter((item) => item.type !== "task_in_progress") as EventItem[];
-  }
-
+  // Large limit so same-day KPIs and recommendations see the full recent log (see `computeDailyStats` caveats).
   async function loadEvents() {
-    const response = await fetch(`${API_URL}/events?limit=20`, { cache: "no-store" });
+    const response = await fetch(`${API_URL}/events?limit=500`, { cache: "no-store" });
     if (!response.ok) throw new Error("Failed to fetch events");
     const rawItems = (await response.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
-    setEvents(normalizeEventList(rawItems));
+    setEvents(normalizeAnalyticsEvents(rawItems));
   }
 
   async function loadSummary() {
     const response = await fetch(`${API_URL}/analytics/daily-summary`, { cache: "no-store" });
     if (!response.ok) throw new Error("Failed to fetch daily summary");
     setSummary(await response.json());
-  }
-
-  async function loadInsight() {
-    const response = await fetch(`${API_URL}/analytics/daily-insight`, { cache: "no-store" });
-    if (!response.ok) throw new Error("Failed to fetch daily insight");
-    setInsight(await response.json());
   }
 
   async function loadCommandCenterTasks() {
@@ -166,27 +172,63 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
     ]);
   }
 
+  async function generateDailyReview(regenerate = false) {
+    setDailyReviewLoading(true);
+    setDailyReviewError(null);
+    try {
+      const response = await fetch(`${API_URL}/ai/daily-review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: localCalendarDayKeyFromDate(new Date()),
+          regenerate
+        })
+      });
+      if (!response.ok) {
+        const msg = await response.text();
+        throw new Error(msg || "Failed to generate review");
+      }
+      const data = (await response.json()) as DailyReview;
+      setDailyReview(data);
+    } catch (e: unknown) {
+      setDailyReviewError(describeFetchFailure(e));
+      setDailyReview(null);
+    } finally {
+      setDailyReviewLoading(false);
+    }
+  }
+
   useEffect(() => {
     Promise.all([
       loadEvents(),
       loadSummary(),
-      loadInsight(),
       loadCommandCenterTasks(),
       loadCommandCenterZones(),
       loadFinanceRangeSummaries(),
       loadFocusSessions()
-    ]).catch((err: Error) => {
-      if (err.message === "Failed to fetch") {
-        setError(apiConnectionError);
-        return;
-      }
-      setError(err.message);
+    ]).catch((err: unknown) => {
+      setError(describeFetchFailure(err));
     });
   }, []);
 
   useEffect(() => {
     setPlanCompletedIds(loadDailyPlanCompletedIds(new Date()));
   }, []);
+
+  useEffect(() => {
+    if (tab !== "recommendations") return;
+    const d = localCalendarDayKeyFromDate(new Date());
+    let cancelled = false;
+    fetch(`${API_URL}/ai/reviews/${d}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setDailyReview(data as DailyReview);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -210,8 +252,8 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       }
       setPayloadText('{"note":"manual event"}');
       await loadEvents();
-    } catch {
-      setError(apiConnectionError);
+    } catch (e: unknown) {
+      setError(describeFetchFailure(e));
     }
   }
 
@@ -231,64 +273,52 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       }
       toast.success("Focus session started");
       router.push("/work/focus");
-    } catch {
-      setError(apiConnectionError);
-      toast.error("Cannot connect to API");
+    } catch (e: unknown) {
+      const msg = describeFetchFailure(e);
+      setError(msg);
+      toast.error(msg);
     } finally {
       setStartingFocus(false);
     }
   }
 
-  const focusMinutes = Math.round(
-    events
-      .filter((item) => item.type === "focus_ended" || item.type === "focus_session_completed")
-      .map((item) => {
-        const p = item.payload as Record<string, unknown>;
-        if (item.type === "focus_session_completed") {
-          const sec = Number(p.duration_seconds ?? 0);
-          if (Number.isFinite(sec) && sec > 0) return sec;
-          return Number(p.duration_minutes ?? 0) * 60;
-        }
-        return Number(p.duration_seconds ?? 0);
-      })
-      .reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0) / 60
-  );
+  // Event-sourced metrics for today (tasks/focus/cleaning/expense signals). Income KPI still uses `DailySummary`.
+  const dailyStatsFromEvents = useMemo(() => {
+    const dayKey = localCalendarDayKeyFromDate(new Date());
+    return computeDailyStats(events, dayKey);
+  }, [events]);
 
   const kpis = [
-    { label: "Tasks", value: summary?.tasks_completed ?? 0 },
-    { label: "Focus", value: `${focusMinutes}m` },
+    { label: "Tasks", value: dailyStatsFromEvents.tasksCompleted },
+    { label: "Focus", value: `${dailyStatsFromEvents.focusMinutes}m` },
     { label: "Income", value: `$${(summary?.income_total ?? 0).toFixed(0)}` },
     { label: "Balance", value: `${(summary?.balance_delta ?? 0).toFixed(0)}` }
   ];
-  const recentEvents = events.slice(0, 3);
-  const recommendations = insight?.recommendations ?? [];
-  const visibleRecommendations = showAllRecommendations ? recommendations : recommendations.slice(0, 2);
-
+  const recentEvents = useMemo(() => events.slice(0, 3), [events]);
   const topTask = pickTopPriorityTask(commandTasks);
   const nextZone = pickNextCleaningZone(commandZones);
   const systemPillars = useMemo(
     () =>
       computeSystemStatus({
-        tasksCompletedToday: summary?.tasks_completed ?? 0,
+        tasksCompletedToday: dailyStatsFromEvents.tasksCompleted,
         focusSessions,
         cleaningZones: commandZones,
         monthlyBalanceDelta: financeMonth?.balance_delta ?? null
       }),
-    [summary?.tasks_completed, focusSessions, commandZones, financeMonth?.balance_delta]
+    [dailyStatsFromEvents.tasksCompleted, focusSessions, commandZones, financeMonth?.balance_delta]
   );
 
-  const nextActions = useMemo(
-    () =>
-      generateNextActions({
-        focusSessions,
-        cleaningZones: commandZones,
-        tasks: commandTasks,
-        expensesTodayTotal: financeToday?.expense_total ?? 0,
-        dailyEventsTotal: summary?.events_total ?? null,
-        now: new Date()
-      }),
-    [focusSessions, commandZones, commandTasks, financeToday?.expense_total, summary?.events_total]
-  );
+  const nextActions = useMemo(() => {
+    const now = new Date();
+    return generateNextActions({
+      focusSessions,
+      cleaningZones: commandZones,
+      tasks: commandTasks,
+      expensesTodayTotal: dailyStatsFromEvents.expensesTotal,
+      dailyEventsTotal: countEventsOnLocalDay(events, localCalendarDayKeyFromDate(now)),
+      now
+    });
+  }, [focusSessions, commandZones, commandTasks, dailyStatsFromEvents.expensesTotal, events]);
 
   const dailyPlanBase = useMemo(
     () =>
@@ -296,9 +326,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
         tasks: commandTasks,
         cleaningZones: commandZones,
         focusSessions,
-        expensesTodayTotal: financeToday?.expense_total ?? 0
+        expensesTodayTotal: dailyStatsFromEvents.expensesTotal
       }),
-    [commandTasks, commandZones, focusSessions, financeToday?.expense_total]
+    [commandTasks, commandZones, focusSessions, dailyStatsFromEvents.expensesTotal]
   );
 
   const dailyPlanItems: DailyPlanItem[] = useMemo(
@@ -346,9 +376,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       } else if (pa.kind === "task_open") {
         router.push((pa.taskId ? `/work/tasks?highlight=${encodeURIComponent(pa.taskId)}` : "/work/tasks") as Route);
       }
-    } catch {
+    } catch (e: unknown) {
       toast.error("Action failed");
-      setError(apiConnectionError);
+      setError(describeFetchFailure(e));
     } finally {
       setRecActionBusy(null);
     }
@@ -652,27 +682,109 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
 
       <section className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.7fr]">
         <div className="rounded-2xl border border-[#2A2F36] bg-[#11151A] p-5 md:p-6">
-          <h2 className="text-lg font-semibold text-white">Recommendations</h2>
-          <div className="mt-3 space-y-2">
-            {visibleRecommendations.map((item) => (
-              <article key={item} className="rounded-xl border-l-3 border-[#C6A36B] bg-[#171B21] p-3 md:p-4">
-                <p className="text-sm leading-6 text-[#E5E5E5]">{item}</p>
-              </article>
-            ))}
-            {!visibleRecommendations.length && (
-              <p className={`rounded-lg border border-[#2A2F36] bg-[#141A22]/50 px-3 py-2 text-sm ${ui.mutedText}`}>
-                No recommendations yet.
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-white">AI Daily Review</h2>
+              <p className={`mt-1 text-sm ${ui.mutedText}`}>
+                Narrative review from your data (events, tasks, zones, finance). Not a chat — one structured pass per
+                generation. Reviews are saved per day; opening this tab loads today's copy if it exists. Date uses
+                the same UTC calendar day as server analytics.
               </p>
-            )}
+              <Link href="/insights/ai-reviews" className={`mt-2 inline-block text-sm text-[#C6A36B] underline-offset-2 hover:underline`}>
+                AI Review History
+              </Link>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button
+                className={`${ui.primaryButton} min-h-11`}
+                disabled={dailyReviewLoading}
+                onClick={() => void generateDailyReview(false)}
+                type="button"
+              >
+                {dailyReviewLoading ? "Working…" : "Get today's review"}
+              </Button>
+              <Button
+                className={`${ui.secondaryButton} min-h-11`}
+                disabled={dailyReviewLoading}
+                onClick={() => void generateDailyReview(true)}
+                type="button"
+              >
+                Regenerate
+              </Button>
+            </div>
           </div>
-          {recommendations.length > 2 && (
-            <button
-              className={`${ui.secondaryButton} mt-4 w-full min-h-11 sm:w-fit`}
-              onClick={() => setShowAllRecommendations((prev) => !prev)}
-              type="button"
-            >
-              {showAllRecommendations ? "Show less" : `Show more (${recommendations.length - 2})`}
-            </button>
+
+          {dailyReviewError && (
+            <p className="mt-4 rounded-lg border border-[#5c2a2a]/60 bg-[#1a1010] px-3 py-2 text-sm text-[#ffb3b3]">
+              {dailyReviewError}. Try again when the API is reachable.
+            </p>
+          )}
+
+          {dailyReview?.from_storage && !dailyReviewError && (
+            <p className="mt-4 rounded-lg border border-[#2A2F36] bg-[#141A22] px-3 py-2 text-sm text-[#c9d0d8]">
+              Showing the saved review for this date. Use <span className="font-medium text-white">Regenerate</span> to
+              rebuild from the latest data (replaces the stored version).
+            </p>
+          )}
+
+          {dailyReview?.fallback && !dailyReviewError && (
+            <p className="mt-4 rounded-lg border border-[#6d572f]/50 bg-[#141008] px-3 py-2 text-sm text-[#f3d59e]">
+              AI provider unavailable or returned an error — showing an offline rule-based review instead.
+            </p>
+          )}
+
+          {dailyReview && (
+            <div className="mt-6 space-y-6">
+              <div>
+                <h3 className="text-base font-semibold text-[#C6A36B]">{dailyReview.title}</h3>
+                <p className={`mt-2 text-sm leading-relaxed text-[#E5E5E5]`}>{dailyReview.summary}</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8A8F98]">What went well</h4>
+                  <ul className="mt-2 space-y-2">
+                    {dailyReview.wins.map((line, i) => (
+                      <li
+                        key={`win-${i}-${line.slice(0, 24)}`}
+                        className="rounded-lg border border-[#2f4b3a]/50 bg-[#0c1210] px-3 py-2 text-sm text-[#b7e4c7]"
+                      >
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8A8F98]">Needs attention</h4>
+                  <ul className="mt-2 space-y-2">
+                    {dailyReview.concerns.map((line, i) => (
+                      <li
+                        key={`concern-${i}-${line.slice(0, 24)}`}
+                        className="rounded-lg border border-[#6d572f]/45 bg-[#100e0a] px-3 py-2 text-sm text-[#f3d59e]"
+                      >
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8A8F98]">Tomorrow</h4>
+                <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-[#E5E5E5]">
+                  {dailyReview.tomorrowPlan.map((line, i) => (
+                    <li key={`tm-${i}-${line.slice(0, 24)}`} className="leading-relaxed">
+                      {line}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          )}
+
+          {!dailyReview && !dailyReviewLoading && !dailyReviewError && (
+            <p className={`mt-6 rounded-lg border border-[#2A2F36] bg-[#141A22]/50 px-3 py-2 text-sm ${ui.mutedText}`}>
+              No saved review for today yet — tap <span className="text-[#c9d0d8]">Generate review</span> to build and
+              store one from today's context.
+            </p>
           )}
         </div>
 
