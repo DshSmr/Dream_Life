@@ -63,25 +63,43 @@ Shared design tokens, theme presets, and an i18n foundation with section-based m
 
 ### Dashboard overview
 
+Today, current state, and a two-week patterns preview on the main overview.
+
 ![Dashboard overview](assets/screenshots/dashboard-overview.png)
 
+### Goals
+
+Goals tied to savings, home score, tasks, or focus, with progress from logged activity.
+
+![Goals](assets/screenshots/goals.png)
+
 ### Focus system
+
+Tasks, active focus session, and recent session history.
 
 ![Focus system](assets/screenshots/focus-system.png)
 
 ### Home care
 
+Cleaning zones, home health, and care streaks.
+
 ![Home care](assets/screenshots/home-care.png)
 
 ### Patterns
+
+Life rhythm grid and day summaries over a selected range.
 
 ![Patterns](assets/screenshots/patterns.png)
 
 ### Life flow
 
+Activity stream grouped by time of day.
+
 ![Life flow](assets/screenshots/life-flow.png)
 
 ### Weekly review
+
+Work, home, and money in one weekly summary with short observations.
 
 ![Weekly review](assets/screenshots/weekly-review.png)
 
