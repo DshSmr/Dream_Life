@@ -2,7 +2,7 @@
 
 A calm personal system for building the life you want through small daily steps.
 
-Dream Life connects work, focus, home routines, finances, reflections, and patterns in one product. The repository folder is named `Life OS`; the application brand is **Dream Life**.
+Dream Life connects work, focus, home routines, finances, reflections, and patterns in one product.
 
 ## Demo
 
