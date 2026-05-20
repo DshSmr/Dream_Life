@@ -1,1 +1,5 @@
-export { LifeOsRealtimeProvider, useLifeOsRealtimeEpoch } from "@/services/realtime/context";
+export {
+  LifeOsRealtimeProvider,
+  useBumpLifeOsData,
+  useLifeOsRealtimeEpoch
+} from "@/services/realtime/context";

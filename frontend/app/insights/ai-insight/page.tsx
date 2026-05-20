@@ -11,18 +11,26 @@ import { BodyText, LabelText, MutedText, PageTitle, SectionTitle } from "@/compo
 import { cn } from "@/lib/utils";
 import { useUserPreferencesEpoch } from "@/hooks/useUserPreferencesEpoch";
 import { getResolvedUserPreferences } from "@/services/preferences";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { Badge } from "@/components/ui/badge";
 import { WhyLine } from "@/components/explainability/WhyLine";
+import { useTranslations } from "@/lib/i18n";
+import { buildTodayDisplayCopy } from "@/lib/today/buildTodayInsight";
+import { localizeTodayObservation } from "@/lib/today/localizeTodayObservations";
 import { generateRuleInsights, type RuleInsight } from "@/services/insights";
 
-function insightCategoryLabel(category: RuleInsight["category"]): string {
-  if (category === "productivity") return "Productivity";
-  if (category === "cleaning") return "Cleaning";
-  if (category === "finance") return "Finance";
-  return "Tasks";
+type TodayT = (key: string) => string;
+
+function insightCategoryLabel(category: RuleInsight["category"], t: TodayT): string {
+  if (category === "productivity") return t("categoryWork");
+  if (category === "cleaning") return t("categoryCleaning");
+  if (category === "finance") return t("categoryFinance");
+  return t("categoryTasks");
 }
 
 export default function AiDailyInsightPage() {
+  const { t } = useTranslations("insights.today");
+  const { t: tCommon } = useTranslations("common");
   const userPrefsEpoch = useUserPreferencesEpoch();
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [insight, setInsight] = useState<DailyInsight | null>(null);
@@ -79,7 +87,7 @@ export default function AiDailyInsightPage() {
         setFinanceToday(fin);
         setAnalyticsEvents(ev);
       })
-      .catch(() => setError("Could not load AI insight data."));
+      .catch(() => setError(t("loadError")));
   }, []);
 
   // Recomputes when the normalized event batch loads (same cap as other analytics screens).
@@ -96,9 +104,20 @@ export default function AiDailyInsightPage() {
         expensesTodayTotal: dailyStatsFromEvents.expensesTotal,
         tasks,
         dailySpendingLimitEur: getResolvedUserPreferences().dailySpendingLimit
-      }),
-    [focusSessions, zones, dailyStatsFromEvents.expensesTotal, tasks, userPrefsEpoch]
+      }).map((item) => localizeTodayObservation(item, t)),
+    [focusSessions, zones, dailyStatsFromEvents.expensesTotal, tasks, userPrefsEpoch, t]
   );
+
+  const displayCopy = useMemo(() => {
+    if (!summary) {
+      return {
+        headline: insight?.headline ?? t("fallbackHeadline"),
+        reflection: insight?.summary ?? null,
+        detail: null as string | null
+      };
+    }
+    return buildTodayDisplayCopy(summary, dailyStatsFromEvents.focusMinutes, t);
+  }, [summary, insight, dailyStatsFromEvents.focusMinutes, t]);
 
   return (
     <div className={ui.contentClass}>
@@ -110,25 +129,28 @@ export default function AiDailyInsightPage() {
             variant="outline"
             className="inline-flex h-9 items-center rounded-xl bg-lifeos-accent-soft px-4 text-sm font-medium text-lifeos-accent shadow-sm"
           >
-            Daily insight
+            {t("badge")}
           </Badge>
           <span className={cn(ds.typography.bodySecondary, "text-lifeos-fg-muted")}>
-            {summary?.date ? formatDateFiNumeric(summary.date) : "Today"}
+            {summary?.date ? formatDateFiNumeric(summary.date) : t("badge")}
           </span>
         </div>
-        <PageTitle className="mt-ds-4 max-w-[22ch] md:max-w-none">{insight?.headline ?? "Light execution day"}</PageTitle>
+        <PageTitle className="mt-ds-4 max-w-[22ch] md:max-w-none">{displayCopy.headline}</PageTitle>
         <MutedText className={cn("mt-ds-4", ds.typography.proseWideMax)}>
-          {insight?.summary ?? "Loading insight..."}
+          {displayCopy.reflection ?? tCommon("loading")}
         </MutedText>
+        {displayCopy.detail ? (
+          <BodyText as="p" className={cn(ds.typography.bodyMuted, "mt-ds-3 tabular-nums")}>
+            {displayCopy.detail}
+          </BodyText>
+        ) : null}
       </section>
 
       <section className={cn("mt-6", ds.surfaces.contentPanelCompact)}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-ds-2">
-            <SectionTitle>From your data</SectionTitle>
-            <MutedText className={ds.typography.proseMax}>
-              Nudges from what you&apos;ve logged. Same logic as before.
-            </MutedText>
+            <SectionTitle>{t("observationsTitle")}</SectionTitle>
+            <MutedText className={ds.typography.proseMax}>{t("observationsHint")}</MutedText>
           </div>
         </div>
 
@@ -138,7 +160,7 @@ export default function AiDailyInsightPage() {
               <li key={item.id}>
                 <article className={ds.surfaces.accentCallout}>
                   <LabelText as="p" className={cn(ds.typography.labelMicro, "text-lifeos-accent")}>
-                    {insightCategoryLabel(item.category)}
+                    {insightCategoryLabel(item.category, t)}
                   </LabelText>
                   <BodyText as="p" className={cn(ds.typography.bodySecondary, "mt-ds-3")}>
                     {item.message}
@@ -149,11 +171,13 @@ export default function AiDailyInsightPage() {
             ))}
           </ul>
         ) : (
-          <div className={cn("mt-ds-5", ds.surfaces.toneWell)}>
-            <BodyText as="p" className={ds.typography.bodySecondary}>
-              <span className="font-medium text-lifeos-fg">All clear.</span> No alerts for this data yet.
-            </BodyText>
-          </div>
+          <CalmEmptyState
+            tone="insights"
+            size="comfortable"
+            className="mt-ds-5"
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
+          />
         )}
       </section>
     </div>

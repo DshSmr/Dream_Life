@@ -18,10 +18,6 @@ function riskCategoryForGoal(category: GoalCategory): RiskCategory {
   return "focus";
 }
 
-function goalProgressPct(g: { currentValue: number; targetValue: number }): number {
-  if (g.targetValue <= 0) return 0;
-  return Math.round(Math.min(100, (g.currentValue / g.targetValue) * 100));
-}
 const STRONG_DAY_MIN_TASKS = 5;
 const STRONG_DAY_MIN_FOCUS_MINUTES = 45;
 const STRONG_DAY_MIN_HOME_SCORE = 80;
@@ -44,9 +40,8 @@ const ruleOverdueCleaningNotification: AutomationRule = {
         type: "warning",
         category: "cleaning",
         title: "Desk cleaning overdue",
-        message: `“${deskOverdue.name.trim() || "Desk"}” is past due — a quick reset helps focus.`,
-        explanation:
-          "This zone’s due window has passed based on when it was last marked cleaned and its configured frequency.",
+        message: `“${deskOverdue.name.trim() || "Desk"}” is past due. A quick reset might help.`,
+        explanation: "It has been longer than you planned since this zone was last cleaned.",
         created_at,
         action: {
           label: "Mark as cleaned",
@@ -63,8 +58,7 @@ const ruleOverdueCleaningNotification: AutomationRule = {
         category: "cleaning",
         title: "Cleaning overdue",
         message: `“${z.name.trim() || "A zone"}” needs attention.`,
-        explanation:
-          "At least one cleaning zone is overdue relative to its last clean date and how often you expect it done.",
+        explanation: "At least one zone is past the schedule you set.",
         created_at,
         action: {
           label: "Mark as cleaned",
@@ -91,12 +85,11 @@ const ruleOverdueCleaningRecommendation: AutomationRule = {
       id: "action-cleaning-overdue",
       type: "cleaning",
       priority: "high",
-      message: `Tend to “${z.name.trim() || "a cleaning zone"}” — it’s overdue.`,
-      explanation:
-        "This zone is past its expected window between cleans based on last done date and your frequency setting — quick win for home health.",
+      message: `“${z.name.trim() || "A zone"}” is overdue for a clean.`,
+      explanation: "A small reset here could make the rest of the day feel lighter.",
       generatedAt: ctx.now.toISOString(),
       icon: "🧹",
-      primaryAction: { kind: "cleaning_mark_done", zoneId: z.id, buttonLabel: "Mark cleaned" }
+      primaryAction: { kind: "cleaning_mark_done", zoneId: z.id, buttonLabel: "Done for today" }
     });
   }
 };
@@ -116,12 +109,11 @@ const ruleNoFocusRecommendation: AutomationRule = {
       id: "action-focus-start",
       type: "productivity",
       priority: "high",
-      message: "Start a focus session.",
-      explanation:
-        "No focus activity was detected for today (local calendar day), and you’re inside your configured workday window.",
+      message: "A short focus stretch might feel gentle.",
+      explanation: "No focus logged yet, and you are inside the hours you usually keep.",
       generatedAt: ctx.now.toISOString(),
       icon: "🔥",
-      primaryAction: { kind: "focus_start", buttonLabel: "Start focus" }
+      primaryAction: { kind: "focus_start", buttonLabel: "Start a focus session" }
     });
   }
 };
@@ -140,8 +132,8 @@ const ruleGoalAtRisk: AutomationRule = {
         id: `auto-goal-risk-${g.id}`,
         severity: "medium",
         category: riskCategoryForGoal(g.category),
-        message: `Goal “${g.title.trim() || "Untitled"}” is at risk for this ${g.period} window — adjust pace or scope.`,
-        explanation: `Only about ${goalProgressPct(g)}% progress toward this ${g.period} goal with limited time left in the window — status is marked at risk.`,
+        message: `“${g.title.trim() || "A goal"}” might like a gentler rhythm this ${g.period === "monthly" ? "month" : "week"}.`,
+        explanation: `Not much calendar left this ${g.period === "monthly" ? "month" : "week"}. A small step still counts.`,
         detectedAt,
         source: "automation"
       });
@@ -168,9 +160,8 @@ const ruleStrongProductivityInsight: AutomationRule = {
   },
   action: (ctx, sink) => {
     sink.positiveInsights.push({
-      message:
-        "Strong day: you moved many tasks forward, logged solid focus time, and home care still looks healthy — keep this rhythm.",
-      explanation: `Today’s event totals meet all checks: ≥${STRONG_DAY_MIN_TASKS} tasks completed, ≥${STRONG_DAY_MIN_FOCUS_MINUTES} focus minutes, and average home health ≥${STRONG_DAY_MIN_HOME_SCORE}% across zones.`
+      message: "A grounded day. Tasks, focus, and home each got a little attention.",
+      explanation: "Tasks, focus, and home all had a little care today."
     });
   }
 };
@@ -187,10 +178,9 @@ const ruleHighPriorityTaskNotification: AutomationRule = {
       id: "notif-tasks-high-priority",
       type: "warning",
       category: "tasks",
-      title: "High priority task still open",
-      message: `“${highTask.title.trim() || "Task"}” is incomplete — consider doing it first.`,
-      explanation:
-        "Among open tasks, at least one is marked high priority — this notification highlights the top candidate to tackle next.",
+      title: "Important task still open",
+      message: `“${highTask.title.trim() || "Task"}” is still waiting.`,
+      explanation: "You marked this one as high priority. It might be a good next step.",
       created_at: localDayStartIso(ctx.now),
       action: {
         label: "Open task",
@@ -216,9 +206,9 @@ const ruleHighSpendNotification: AutomationRule = {
       id: "notif-finance-high-spend",
       type: "warning",
       category: "finance",
-      title: "High spending detected today",
-      message: `Today's expenses are above €${limit}. Review transactions when you can.`,
-      explanation: `Today's expense total (€${ctx.expensesTodayTotal.toFixed(0)}) is above your personal daily spending limit (€${limit}) in Settings.`,
+      title: "Spending is higher than usual today",
+      message: `Today's expenses are above €${limit}. A quick look might help.`,
+      explanation: `You logged €${ctx.expensesTodayTotal.toFixed(0)} today, above your €${limit} limit in Settings.`,
       created_at: localDayStartIso(ctx.now),
       action: {
         label: "Open finance",
@@ -241,12 +231,11 @@ const ruleHighPriorityTaskRecommendation: AutomationRule = {
       id: "action-high-priority-task",
       type: "tasks",
       priority: "high",
-      message: "Complete your high priority task.",
-      explanation:
-        "There is at least one incomplete task marked high priority — finishing it first reduces overload elsewhere.",
+      message: "Your important task is still open.",
+      explanation: "Finishing it first might make the rest of the day feel lighter.",
       generatedAt: ctx.now.toISOString(),
       icon: "🎯",
-      primaryAction: { kind: "task_open", taskId: topHigh.id, buttonLabel: "Open task" }
+      primaryAction: { kind: "task_open", taskId: topHigh.id, buttonLabel: "See the task" }
     });
   }
 };
@@ -262,11 +251,11 @@ const ruleFinanceReviewRecommendation: AutomationRule = {
       id: "action-finance-review",
       type: "finance",
       priority: "medium",
-      message: "Review today's spending.",
-      explanation: `Expense volume today exceeds your configured daily limit — worth a quick pass over transactions.`,
+      message: "Take a calm look at today's spending.",
+      explanation: `Today's total is above the daily limit you set in Settings.`,
       generatedAt: ctx.now.toISOString(),
       icon: "💰",
-      primaryAction: { kind: "navigate", href: "/finance/dashboard", buttonLabel: "Open finance" }
+      primaryAction: { kind: "navigate", href: "/finance/dashboard", buttonLabel: "Check finances" }
     });
   }
 };
@@ -286,12 +275,11 @@ const ruleQuietLogRecommendation: AutomationRule = {
       id: "action-log-activity",
       type: "productivity",
       priority: "low",
-      message: "Your day log is quiet — capture one meaningful action (task, expense, or focus).",
-      explanation:
-        "After 10:00 local time, your activity event count for today is still zero while you’re within your workday — the log looks unusually empty.",
+      message: "A quiet day so far. One small log can help you remember it.",
+      explanation: "Past mid-morning and the log is still quiet. One note is enough if you want it.",
       generatedAt: ctx.now.toISOString(),
       icon: "📝",
-      primaryAction: { kind: "navigate", href: "/work/tasks", buttonLabel: "Open tasks" }
+      primaryAction: { kind: "navigate", href: "/work/tasks", buttonLabel: "Glance at tasks" }
     });
   }
 };

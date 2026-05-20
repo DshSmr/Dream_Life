@@ -31,6 +31,12 @@ function normalizeParsed(raw: unknown): Stored | null {
   if (typeof o.workdayEnd === "string" && /^\d{1,2}:\d{2}$/.test(o.workdayEnd.trim())) {
     out.workdayEnd = o.workdayEnd.trim();
   }
+  if (typeof o.currentDreamId === "string") {
+    out.currentDreamId = o.currentDreamId.trim().slice(0, 40);
+  }
+  if (typeof o.currentDreamCustom === "string") {
+    out.currentDreamCustom = o.currentDreamCustom.trim().slice(0, 120);
+  }
 
   return Object.keys(out).length ? out : null;
 }

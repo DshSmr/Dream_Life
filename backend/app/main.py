@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routers.app_data import router as app_data_router
 from app.routers.ai import router as ai_router
 from app.routers.analytics import router as analytics_router
 from app.routers.cleaning import router as cleaning_router
@@ -48,6 +49,7 @@ def health():
     return {"status": "ok"}
 
 
+app.include_router(app_data_router)
 app.include_router(ai_router)
 app.include_router(events_router)
 app.include_router(iot_router)

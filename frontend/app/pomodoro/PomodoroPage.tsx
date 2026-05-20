@@ -1,19 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_URL, PomodoroSession, TaskItem } from "@/lib/api";
-import { formatDateTimeFiNumeric } from "@/lib/datetime";
 import { useUserPreferencesEpoch } from "@/hooks/useUserPreferencesEpoch";
 import { getResolvedUserPreferences } from "@/services/preferences";
+import { pomodoroStats } from "@/lib/operational/metrics";
+import {
+  formatWorkBreakLine,
+  pomodoroPrimaryTitle,
+  pomodoroSecondaryParts,
+  pomodoroTaskLine
+} from "@/lib/pomodoro/sessionDisplay";
 import { ui } from "@/lib/ui";
-import { ds } from "@/styles/design-system";
 import { cn } from "@/lib/utils";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { Button } from "@/components/ui/button";
-import { PageTitle } from "@/components/ui/typography";
+import {
+  ActivityRow,
+  CollapsibleQuickForm,
+  OperationalMetricBand,
+  OperationalMetricCell,
+  OperationalPageHeader,
+  OperationalStatePanel,
+  OperationalTwoColumn,
+  RecentActivityBlock
+} from "@/components/operational/OperationalPrimitives";
 import { toast } from "sonner";
+import { useTranslations } from "@/lib/i18n";
 import { useLifeOsRealtimeEpoch } from "@/services/realtime";
 
 export default function PomodoroPage() {
+  const { t, locale } = useTranslations("work.pomodoro");
+  const { t: tCommon } = useTranslations();
   const userPrefsEpoch = useUserPreferencesEpoch();
   const [sessions, setSessions] = useState<PomodoroSession[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -22,11 +40,11 @@ export default function PomodoroPage() {
   const [workMinutes, setWorkMinutes] = useState("25");
   const [breakMinutes, setBreakMinutes] = useState("5");
   const [error, setError] = useState<string | null>(null);
-  const activeSession = sessions.find((session) => session.status === "running") ?? null;
+  const [now, setNow] = useState(() => new Date());
   const realtimeEpoch = useLifeOsRealtimeEpoch();
 
   const loadSessions = useCallback(async () => {
-    const response = await fetch(`${API_URL}/pomodoro/sessions?limit=20`, { cache: "no-store" });
+    const response = await fetch(`${API_URL}/pomodoro/sessions?limit=50`, { cache: "no-store" });
     if (!response.ok) throw new Error("Failed to fetch pomodoro sessions");
     setSessions(await response.json());
   }, []);
@@ -50,18 +68,26 @@ export default function PomodoroPage() {
     setWorkMinutes(String(getResolvedUserPreferences().focusLengthMinutes));
   }, [userPrefsEpoch]);
 
+  const stats = useMemo(() => pomodoroStats(sessions), [sessions]);
+
+  useEffect(() => {
+    if (!stats.running) return;
+    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(id);
+  }, [stats.running?.id]);
+
   async function startSession() {
     setError(null);
     const work = Number(workMinutes);
     const brk = Number(breakMinutes);
     if (!Number.isInteger(work) || work < 10) {
-      setError("Work minutes must be an integer >= 10");
-      toast.error("Work minutes must be an integer >= 10");
+      setError(t("workMinInvalid"));
+      toast.error(t("workMinInvalid"));
       return;
     }
     if (!Number.isInteger(brk) || brk < 1) {
-      setError("Break minutes must be an integer >= 1");
-      toast.error("Break minutes must be an integer >= 1");
+      setError(t("breakMinInvalid"));
+      toast.error(t("breakMinInvalid"));
       return;
     }
     try {
@@ -76,17 +102,18 @@ export default function PomodoroPage() {
         })
       });
       if (!response.ok) {
-        setError("Failed to start pomodoro session");
-        toast.error("Failed to start pomodoro session");
+        setError(t("startFailed"));
+        toast.error(t("startFailed"));
         return;
       }
       setLabel("");
       setPomodoroTaskId("");
-      toast.success("Pomodoro started");
+      toast.success(t("started"));
+      setNow(new Date());
       await loadSessions();
     } catch {
-      setError("Cannot connect to API. Please check backend server.");
-      toast.error("Cannot connect to API");
+      setError(tCommon("common.toast.connectionError"));
+      toast.error(tCommon("common.toast.couldNotConnect"));
     }
   }
 
@@ -95,162 +122,156 @@ export default function PomodoroPage() {
     try {
       const response = await fetch(`${API_URL}/pomodoro/sessions/${sessionId}/complete`, { method: "POST" });
       if (!response.ok) {
-        setError("Failed to complete pomodoro session");
-        toast.error("Failed to complete pomodoro session");
+        setError(t("completeFailed"));
+        toast.error(t("completeFailed"));
         return;
       }
-      toast.success("Pomodoro completed");
+      toast.success(t("completed"));
       await loadSessions();
     } catch {
-      setError("Cannot connect to API. Please check backend server.");
-      toast.error("Cannot connect to API");
+      setError(tCommon("common.toast.connectionError"));
+      toast.error(tCommon("common.toast.couldNotConnect"));
     }
   }
 
+  function runningSecondary(session: PomodoroSession): string {
+    const parts = [formatWorkBreakLine(session.work_minutes, session.break_minutes, t)];
+    const taskLine = pomodoroTaskLine(session, tasks, t);
+    if (taskLine) parts.push(taskLine);
+    return parts.join(" · ");
+  }
+
+  const startForm = (
+    <CollapsibleQuickForm label={t("startCycle")} hideExpandGlyph>
+      <div className="grid gap-ds-2">
+        <div className="grid gap-ds-1">
+          <label className={ui.formLabel} htmlFor="pomo-task">
+            {t("focusOn")}
+          </label>
+          <select
+            id="pomo-task"
+            className={ui.inputClass}
+            value={pomodoroTaskId}
+            onChange={(e) => setPomodoroTaskId(e.target.value)}
+          >
+            <option value="">{t("generalFocus")}</option>
+            {tasks
+              .filter((task) => task.status !== "done")
+              .map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.title}
+                </option>
+              ))}
+          </select>
+        </div>
+        <div className="grid gap-ds-1">
+          <label className={ui.formLabel} htmlFor="pomo-label">
+            {t("labelOptional")}
+          </label>
+          <input
+            id="pomo-label"
+            className={ui.inputClass}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={t("labelPlaceholder")}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-ds-2">
+          <div className="grid gap-ds-1">
+            <label className={ui.formLabel} htmlFor="pomo-work">
+              {t("workMin")}
+            </label>
+            <input
+              id="pomo-work"
+              className={ui.inputClass}
+              inputMode="numeric"
+              value={workMinutes}
+              onChange={(e) => setWorkMinutes(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-ds-1">
+            <label className={ui.formLabel} htmlFor="pomo-break">
+              {t("breakMin")}
+            </label>
+            <input
+              id="pomo-break"
+              className={ui.inputClass}
+              inputMode="numeric"
+              value={breakMinutes}
+              onChange={(e) => setBreakMinutes(e.target.value)}
+            />
+          </div>
+        </div>
+        <Button className={`${ui.primaryButton} w-full justify-center`} onClick={startSession} type="button">
+          {t("startPomodoro")}
+        </Button>
+      </div>
+    </CollapsibleQuickForm>
+  );
+
   return (
     <div className={ui.contentClass}>
-      <section className={cn(ui.panelClass, "space-y-ds-4")}>
-        <div className="flex flex-wrap items-end justify-between gap-ds-3">
-          <div>
-            <PageTitle className="text-lifeos-section md:text-lifeos-card-title">Pomodoro</PageTitle>
-            <p className={cn(ui.pageHint, "mt-ds-2")}>
-              Timed work blocks. Link a task to record what you worked on, or leave general focus.
-            </p>
-          </div>
-          <p className={cn(ds.typography.caption, "tabular-nums text-lifeos-fg-muted")}>{sessions.length} in list</p>
-        </div>
+      <section className={cn(ui.panelClass, "space-y-ds-5")}>
+        <OperationalPageHeader title={t("pageTitle")} description={t("pageDescription")} />
 
-        <div
-          className={`overflow-hidden transition-all duration-300 ${
-            sessions.length === 0 ? "max-h-10 opacity-100" : "max-h-0 opacity-0"
-          }`}
-        >
-          <p className={ui.microHint}>Tip: keep one simple cycle, then repeat</p>
-        </div>
-
-        <div className="grid gap-ds-5 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start">
-          <div className="min-w-0 space-y-ds-3">
-            {activeSession && (
-              <div className="rounded-ds-card bg-lifeos-warning-muted/15 px-ds-4 py-ds-3 shadow-inner">
-                <p className={ds.typography.labelMicro + " text-lifeos-warning"}>Now running</p>
-                <p className="mt-ds-1 text-sm text-lifeos-fg-secondary">
-                  {activeSession.label ?? "Untitled pomodoro"} — {activeSession.work_minutes}m / {activeSession.break_minutes}m
-                  {activeSession.task_id ? (
-                    <span className={`mt-1 block text-xs ${ui.mutedText}`}>
-                      Task: {tasks.find((t) => t.id === activeSession.task_id)?.title ?? activeSession.task_id}
-                    </span>
-                  ) : (
-                    <span className={`mt-1 block text-xs ${ui.mutedText}`}>General focus</span>
-                  )}
+        <OperationalStatePanel title={tCommon("common.currentState")} tone={stats.running ? "active" : "default"}>
+          {stats.running ? (
+            <div className="flex flex-wrap items-start justify-between gap-ds-3">
+              <div>
+                <p className="text-base font-semibold text-lifeos-fg">
+                  {pomodoroPrimaryTitle(stats.running, tasks, t)}
                 </p>
-                <Button className={`${ui.secondaryButton} mt-ds-2`} onClick={() => completeSession(activeSession.id)} type="button">
-                  Complete active pomodoro
-                </Button>
+                <p className="mt-ds-1 text-sm text-lifeos-fg-muted">{runningSecondary(stats.running)}</p>
               </div>
-            )}
-
-            {sessions.length === 0 && (
-              <div className={cn(ui.emptyState, "py-ds-4")}>
-                <p className="font-medium text-lifeos-fg-secondary">No pomodoro sessions yet.</p>
-                <p className="mt-ds-2 text-sm">Start a cycle from the right to populate history.</p>
-              </div>
-            )}
-
-            <ul className="space-y-ds-2">
-              {sessions.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex flex-wrap items-start justify-between gap-x-ds-4 gap-y-ds-2 rounded-ds-input bg-lifeos-muted/25 px-ds-3 py-ds-2.5 shadow-inner"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-lifeos-fg">{s.label ?? "Untitled pomodoro"}</p>
-                    <p className={`mt-0.5 text-sm ${ui.mutedText}`}>
-                      {s.task_id ? `Task: ${tasks.find((t) => t.id === s.task_id)?.title ?? s.task_id} · ` : "General focus · "}
-                      {s.work_minutes}m / {s.break_minutes}m — {s.status}
-                      <span className="mt-0.5 block text-xs tabular-nums">{formatDateTimeFiNumeric(s.started_at)}</span>
-                    </p>
-                  </div>
-                  {s.status === "running" && (
-                    <Button className={ui.secondaryButton} onClick={() => completeSession(s.id)} type="button" size="sm">
-                      Complete
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <aside className="min-w-0 space-y-ds-3 lg:sticky lg:top-4">
-            <div className={cn(ui.formCard, "!mt-0")}>
-              <p className={cn(ds.typography.sectionEyebrow, "mb-ds-2")}>Start</p>
-              <div className="grid gap-ds-2">
-                <div className="grid gap-ds-1">
-                  <label className={ui.formLabel} htmlFor="pomo-task">
-                    Focus on
-                  </label>
-                  <select
-                    id="pomo-task"
-                    className={ui.inputClass}
-                    value={pomodoroTaskId}
-                    onChange={(e) => setPomodoroTaskId(e.target.value)}
-                  >
-                    <option value="">General focus</option>
-                    {tasks
-                      .filter((t) => t.status !== "done")
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.title}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div className="grid gap-ds-1">
-                  <label className={ui.formLabel} htmlFor="pomo-label">
-                    Label (optional)
-                  </label>
-                  <input
-                    id="pomo-label"
-                    className={ui.inputClass}
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="Work block name"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-ds-2">
-                  <div className="grid gap-ds-1">
-                    <label className={ui.formLabel} htmlFor="pomo-work">
-                      Work (min)
-                    </label>
-                    <input
-                      id="pomo-work"
-                      className={ui.inputClass}
-                      inputMode="numeric"
-                      value={workMinutes}
-                      onChange={(e) => setWorkMinutes(e.target.value)}
-                      placeholder="25"
-                    />
-                  </div>
-                  <div className="grid gap-ds-1">
-                    <label className={ui.formLabel} htmlFor="pomo-break">
-                      Break (min)
-                    </label>
-                    <input
-                      id="pomo-break"
-                      className={ui.inputClass}
-                      inputMode="numeric"
-                      value={breakMinutes}
-                      onChange={(e) => setBreakMinutes(e.target.value)}
-                      placeholder="5"
-                    />
-                  </div>
-                </div>
-                <Button className={`${ui.primaryButton} w-full justify-center`} onClick={startSession} type="button">
-                  Start pomodoro
-                </Button>
-              </div>
+              <Button className={ui.secondaryButton} onClick={() => completeSession(stats.running!.id)} type="button" size="sm">
+                {t("complete")}
+              </Button>
             </div>
-          </aside>
-        </div>
+          ) : (
+            <p className="text-sm text-lifeos-fg-secondary">
+              {t("noCycle")}{" "}
+              {stats.todayDone > 0 ? t("completedToday", { count: stats.todayDone }) : t("startWhenReady")}
+            </p>
+          )}
+        </OperationalStatePanel>
+
+        <OperationalMetricBand>
+          <div className="grid grid-cols-2 gap-ds-4 sm:grid-cols-3">
+            <OperationalMetricCell label={t("today")} value={stats.todayDone} hint={t("completedCycles")} />
+            <OperationalMetricCell label={t("thisWeek")} value={stats.weekDone} />
+            <OperationalMetricCell label={t("cycles")} value={sessions.length} hint={t("loggedRecently")} />
+          </div>
+        </OperationalMetricBand>
+
+        <OperationalTwoColumn
+          main={
+            <RecentActivityBlock title={t("recentCycles")}>
+              {sessions.length === 0 && (
+                <CalmEmptyState
+                  tone="pomodoro"
+                  size="inline"
+                  title={t("emptyTitle")}
+                  description={t("emptyDescription")}
+                />
+              )}
+              {sessions.slice(0, 12).map((s) => (
+                <ActivityRow
+                  key={s.id}
+                  primary={pomodoroPrimaryTitle(s, tasks, t)}
+                  secondary={pomodoroSecondaryParts(s, tasks, now, locale, t).join(" · ")}
+                  action={
+                    s.status === "running" ? (
+                      <Button className={ui.secondaryButton} onClick={() => completeSession(s.id)} type="button" size="sm">
+                        {t("complete")}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ))}
+            </RecentActivityBlock>
+          }
+          aside={startForm}
+        />
 
         {error && <p className="text-sm text-lifeos-danger">{error}</p>}
       </section>

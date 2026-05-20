@@ -67,8 +67,8 @@ export function generateRuleInsights(input: RuleInsightInput): RuleInsight[] {
     out.push({
       id: `cleaning-overdue-${overdue.id}`,
       category: "cleaning",
-      message: `${name} is overdue.`,
-      explanation: `That zone’s cleaning cadence shows it should already have been done based on last cleaned date and frequency.`
+      message: `${name} is overdue for a clean.`,
+      explanation: `Based on when it was last done and how often you want it cleaned.`
     });
   }
 
@@ -76,8 +76,8 @@ export function generateRuleInsights(input: RuleInsightInput): RuleInsight[] {
     out.push({
       id: "finance-high-spending-today",
       category: "finance",
-      message: "High spending detected today.",
-      explanation: `Today's logged expenses (€${input.expensesTodayTotal.toFixed(0)}) exceed your configured daily spending limit (€${spendingLimit}).`
+      message: "You spent more than your daily limit today.",
+      explanation: `Today's expenses (€${input.expensesTodayTotal.toFixed(0)}) are above your limit (€${spendingLimit}) in Settings.`
     });
   }
 
@@ -85,8 +85,8 @@ export function generateRuleInsights(input: RuleInsightInput): RuleInsight[] {
     out.push({
       id: "productivity-no-focus-today",
       category: "productivity",
-      message: "No focus sessions detected today.",
-      explanation: "No focus session was started on the local calendar day — deep-work signal is missing."
+      message: "No focus time logged yet today.",
+      explanation: "A short focus block can help you move one thing forward."
     });
   }
 
@@ -94,8 +94,8 @@ export function generateRuleInsights(input: RuleInsightInput): RuleInsight[] {
     out.push({
       id: "tasks-high-priority-overdue",
       category: "tasks",
-      message: "High-priority tasks are overdue.",
-      explanation: "At least one high-priority task is still open past its due date."
+      message: "A high-priority task is past its due date.",
+      explanation: "Finishing it or adjusting the date might ease the load."
     });
   }
 

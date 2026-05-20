@@ -1,161 +1,175 @@
-# Life OS
+# Dream Life
 
-A personal **Life OS** — a single place I use to run day-to-day productivity, home routines, money, and reflection. It is built like a small product: a FastAPI backend, PostgreSQL, and a Next.js UI, with an **events-first** core so activity stays traceable and insights can grow on top of real data.
+A calm personal system for moving toward the life you want — through small daily steps.
 
----
+Track focus, home care, money, and reflections without turning life into a performance dashboard. The product name in the UI is **Dream Life**; the repository folder is still **Life OS** in places.
 
-## Contents
+<p align="center">
+  <img src="docs/images/demo-poster.jpg" alt="Dream Life — app overview" width="720" />
+</p>
 
-- [What it does](#what-it-does)
-- [Why events-first](#why-events-first)
-- [Tech stack](#tech-stack)
-- [Frontend navigation](#frontend-navigation)
-- [UI & theming](#ui--theming)
-- [Repository layout](#repository-layout)
-- [Prerequisites](#prerequisites)
-- [Quick start](#quick-start)
-- [Optional AI](#optional-ai)
-- [Selected API routes](#selected-api-routes)
-- [Backend tests](#backend-tests)
-- [Docker cheat sheet](#docker-cheat-sheet)
-- [Migrations](#migrations)
-- [Security](#security)
-- [License](#license)
+<p align="center">
+  <em>Dark, quiet UI built for reflection — not hustle metrics.</em>
+</p>
 
 ---
 
-## What it does
+## At a glance
 
-- **Productivity** — tasks, focus sessions, Pomodoro  
-- **Goals** — period targets (tasks, focus minutes, savings, home health) on the dashboard  
-- **Finance** — income, expenses, balance signals  
-- **Home** — cleaning zones and status  
-- **Insights** — daily summary and recommendations (rule-based by default; optional OpenAI)  
-- **Events** — structured activity log (IoT-friendly via HTTP)
+| Area | What you do there |
+|------|-------------------|
+| **Dashboard** | Overview, goals, daily plan, gentle suggestions, notifications |
+| **Work** | Tasks, focus sessions, Pomodoro |
+| **Life** | Cleaning zones, home health, consistency |
+| **Finance** | Income & expenses, soft spending awareness |
+| **Insights** | Activity, patterns, life flow, weekly & monthly reviews |
+| **Settings** | Theme, language (EN / FI / RU), personalization, long-term direction |
 
-## Why events-first
+Activity is stored as a stream of **events** in PostgreSQL, so reviews and patterns stay tied to what actually happened.
 
-Important actions write rows to the `events` table. Analytics and insights read from that stream, so the system stays consistent as features evolve.
+---
+
+## Demo video
+
+A full screen walkthrough lives locally at [`docs/Dream_life_demo.mp4`](docs/Dream_life_demo.mp4) (not committed to git — the file is large). To share publicly, upload it to **GitHub Releases**, YouTube, or similar and link it here.
+
+---
+
+## App tour
+
+### Dashboard — Suggestions
+
+Gentle nudges on goals, ideas for now, a daily reflection note, and quick actions (focus, tasks, finance).
+
+![Dashboard — Suggestions](docs/images/suggestions.png)
+
+---
+
+### Work — Tasks
+
+Today’s focus, light stats, and a simple queue — priorities without clutter.
+
+![Work — Tasks](docs/images/tasks.png)
+
+---
+
+### Work — Focus
+
+See what is running, start or stop a session, and browse recent focus history.
+
+![Work — Focus](docs/images/focus.png)
+
+---
+
+### Life — Cleaning
+
+Home zones, “last cared for” rhythm, streaks, and calm status copy (“Kitchen looks good”).
+
+![Life — Cleaning](docs/images/cleaning.png)
+
+---
+
+### Insights — Patterns
+
+A contribution-style rhythm grid, day summaries, and soft charts for focus, spending, and home care.
+
+![Insights — Patterns](docs/images/patterns.png)
+
+---
+
+### Insights — Weekly review
+
+Work, home, and money in one calm weekly snapshot — with gentle observations, not scores.
+
+![Insights — Weekly review](docs/images/weekly-review.png)
+
+---
+
+## Philosophy
+
+Dream Life is **not** a productivity app.
+
+It should feel **calm**, **supportive**, **reflective**, and **emotionally lightweight**. The goal is not optimization — it is helping you move gently toward a long-term direction.
+
+---
+
+## Design principles
+
+- Calm dark UI (light and system themes supported)
+- Minimal visual noise
+- No aggressive gamification
+- Reflection over performance
+- Human copy — not dashboard jargon
+
+---
 
 ## Tech stack
 
-| Layer        | Technology                    |
-| ------------ | ----------------------------- |
-| Backend      | FastAPI (Python), SQLAlchemy  |
-| Database     | PostgreSQL (Docker locally)   |
-| Migrations   | Alembic                       |
-| Frontend     | Next.js 14, TypeScript, Tailwind, shared design tokens (`themes.css`, `design-system`) |
+| Layer | Technology |
+| ----- | ---------- |
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| UI | Shared Life OS design tokens, accessible components |
+| Backend | FastAPI, SQLAlchemy, Alembic |
+| Database | PostgreSQL |
+| Realtime | SSE (`/events/stream`) for live refetch |
+| AI (optional) | OpenAI for insights/reviews; rule-based fallback |
 
-## Frontend navigation
+**Browser:** theme, locale, personalization, automation toggles.  
+**Server:** tasks, events, finance, cleaning, goals, reviews.
 
-The UI uses a **primary nav** (top bar on desktop, bottom bar on mobile): five feature areas plus **Settings**. Each area can expose **tabs** for related screens. Older URLs still work and **redirect** to the new routes.
+---
 
-| Area            | Base path          | Tabs / notes |
-| --------------- | ------------------ | ------------ |
-| **Dashboard**   | `/dashboard/...`   | Overview, Command Center, Daily Plan, Recommendations, Notifications, **Goals** (`/dashboard/goals`) |
-| **Work**        | `/work/...`        | Tasks, Focus, Pomodoro |
-| **Life**        | `/life/...`        | Cleaning, Home Health, Consistency |
-| **Finance**     | `/finance/...`     | Dashboard (month totals), Transactions |
-| **Insights**    | `/insights/...`    | Activity, Timeline, Review, AI insight / reviews |
-| **Settings**    | `/settings`        | Appearance (dark / light / system), personalization, local automation toggles, link to developer tools |
+## Resetting demo data
 
-Other useful routes: **weekly review** at `/review`, **legacy overview** at `/overview` (if still linked from bookmarks).
+**Settings → Developer tools**
 
-**Redirects (examples):** `/` → `/dashboard/overview`; `/tasks` → `/work/tasks`; `/finance` → `/finance/dashboard`; `/activity` → `/insights/activity`; and similar for other legacy paths.
+- **Clear app history** — removes logged activity; keeps goals, tasks, and home zones.
+- **Reset all data** — also removes goals, tasks, and cleaning zones. Theme, language, and preferences stay.
 
-**Mobile:** horizontal overflow is handled where it matters; primary actions use touch-friendly targets (e.g. min height ~44px); the bottom nav mirrors the main areas.
+---
 
-## UI & theming
+## Status
 
-- **Themes:** `html[data-theme="dark" | "light"]` with semantic tokens in `frontend/styles/themes.css` (surfaces, text, accent, status colors). The app shell applies the chosen theme from Settings (local preference).
-- **Design system:** shared spacing, card surfaces, and typography hints live in `frontend/styles/design-system.ts` and are composed with Tailwind (`lifeos-*` utilities).
-- **Layout direction:** dashboard and tool pages favor **compact, operational** layouts (grouped metrics, side-by-side forms where it helps) so data stays primary and empty card chrome stays minimal.
-- **Control Center “Current state”:** short status rows use **tone-colored** rings (success / warning / risk / soft indigo for neutral) so Mind / Home / Finance / Energy read as separate cells without heavy borders.
+Active development — evolving toward a calm “life operating system.”
 
-If you change tokens, prefer editing `themes.css` and `design-system.ts` rather than one-off hex in components.
+---
 
-## Repository layout
+## Getting started
 
-```
-Life OS/
-├── backend/          # FastAPI app, Alembic, tests
-├── frontend/         # Next.js app
-└── docker-compose.yml
-```
+### Prerequisites
 
-Run commands from the **repository root** unless a section says otherwise.
+- Docker (PostgreSQL)
+- Python 3.11+
+- Node.js 18+
 
-## Prerequisites
-
-- **Docker** (local PostgreSQL)
-- **Python 3.11+** (backend)
-- **Node.js 18+** (frontend)
-
-## Quick start
-
-### 1) Start PostgreSQL
+### 1. Database
 
 ```bash
 docker compose up -d
 ```
 
-PostgreSQL is on host port **5433** (container `5432`) to avoid clashing with a local Postgres on `5432`.
+PostgreSQL on host port **5433** by default.
 
-```bash
-docker compose ps
-```
-
-### 2) Backend (FastAPI)
+### 2. Backend
 
 ```bash
 cd backend
 python -m venv .venv
 ```
 
-Activate the virtual environment:
-
-- **Windows (PowerShell):** `.\.venv\Scripts\Activate.ps1`
-- **Windows (cmd):** `.venv\Scripts\activate.bat`
-- **macOS / Linux:** `source .venv/bin/activate`
-
-Then:
+Activate the venv, then:
 
 ```bash
 pip install -r requirements.txt
-```
-
-Create a local env file (do **not** commit real secrets):
-
-```bash
-# Windows (cmd)
-copy .env.example .env
-
-# PowerShell
-Copy-Item .env.example .env
-
-# macOS / Linux
-cp .env.example .env
-```
-
-Edit `.env` if your database URL or ports differ. Defaults match `docker-compose.yml`.
-
-Apply migrations and run the API:
-
-```bash
+cp .env.example .env   # Windows: copy .env.example .env
 python -m alembic upgrade head
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8765
 ```
 
-Run these from the **`backend`** directory so the `app` package resolves.
-
-- Interactive API docs: `http://127.0.0.1:8765/docs`
+- API: `http://127.0.0.1:8765/docs`
 - Health: `http://127.0.0.1:8765/health`
 
-**Windows:** If binding fails with `WinError 10013`, port **8000** is often reserved. Prefer **`8765`** (as above) or another free port, and set `NEXT_PUBLIC_API_URL` on the frontend to match.
-
-### 3) Frontend (Next.js)
-
-In a **second** terminal:
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -163,85 +177,54 @@ npm install
 npm run dev
 ```
 
-The dev script is pinned to **port 3001** (`next dev -p 3001` in `package.json`), so the app is usually at **`http://localhost:3001`**. Override only if you need another port:
+Open **`http://localhost:3001`**. Dev proxy: `/life-os-api` → port `8765`.
 
-```bash
-npm run dev -- -p 3000
+```powershell
+# Optional override
+$env:NEXT_PUBLIC_API_URL = "http://127.0.0.1:8765"
 ```
 
-Point the app at your API (defaults to `http://localhost:8765` if unset):
+Restart `npm run dev` after changing `NEXT_PUBLIC_*`.
 
-- **PowerShell:** `$env:NEXT_PUBLIC_API_URL = "http://127.0.0.1:8765"`
-- **cmd:** `set NEXT_PUBLIC_API_URL=http://127.0.0.1:8765`
-- **macOS / Linux:** `export NEXT_PUBLIC_API_URL=http://127.0.0.1:8765`
+### Optional AI
 
-Restart `npm run dev` after changing `NEXT_PUBLIC_*` variables.
+In `backend/.env`:
 
-## Optional AI
+- `AI_PROVIDER=rule_based` (default)
+- `AI_PROVIDER=openai` + `OPENAI_API_KEY`
 
-Configure in `.env` (see `.env.example`):
-
-- `AI_PROVIDER=rule_based` — default, no external API  
-- `AI_PROVIDER=openai` — requires `OPENAI_API_KEY` (paid per provider pricing)
-
-Never commit API keys or personal `.env` files.
-
-## Selected API routes
-
-| Method     | Path | Purpose |
-| ---------- | ---- | ------- |
-| GET        | `/health` | Liveness |
-| POST       | `/events` | Create event |
-| GET        | `/events` | List events |
-| POST       | `/tasks` | Create task |
-| GET        | `/tasks` | List tasks |
-| PATCH      | `/tasks/{task_id}/status` | Update task status |
-| GET        | `/analytics/daily-summary` | Daily aggregates |
-| GET        | `/analytics/daily-insight` | Insight payload |
-| GET        | `/finance/summary/range?from=&to=` | Income / expense / balance for `[from, to)` |
-| POST / GET | `/finance/transactions` | Finance usage |
-| POST / GET | `/cleaning/zones` | Cleaning zones |
-| POST       | `/cleaning/zones/{zone_id}/done` | Mark cleaned |
-| POST / GET | `/focus/sessions` | Focus sessions |
-| POST / GET | `/pomodoro/sessions` | Pomodoro sessions |
-| POST       | `/iot/button/work` | IoT-friendly shortcut |
-| POST       | `/iot/button/cleaning` | IoT-friendly shortcut |
-
-The full contract lives at `/docs` when the API is running.
-
-## Backend tests
+### Tests
 
 ```bash
 cd backend
 pytest
 ```
 
-Use the same `.venv` you use to run the app.
+---
 
-## Docker cheat sheet
+## Repository layout
 
-| Command | What it does |
-| ------- | ------------ |
-| `docker compose up -d` | Start services in the background |
-| `docker compose ps` | Container status |
-| `docker compose logs -f db` | Follow Postgres logs |
-| `docker compose down` | Stop and remove containers |
-| `docker compose down -v` | Same + delete the DB volume (full reset) |
-
-## Migrations
-
-Schema changes live under `backend/alembic/versions/`. After pulling new code, from `backend/` with the venv active:
-
-```bash
-python -m alembic upgrade head
+```
+Life OS/
+├── backend/           # FastAPI, Alembic, tests
+├── frontend/          # Next.js (Dream Life UI)
+├── docs/
+│   ├── images/        # README screenshots
+│   └── Dream_life_demo.mp4   # local only (gitignored)
+└── docker-compose.yml
 ```
 
-## Security
+---
 
-- Keep secrets only in local `.env` files.  
-- Do not commit API keys, personal database URLs, or machine-specific paths.  
-- Use `.env.example` as the template others can copy.
+## Future plans
+
+- Onboarding
+- Mobile-friendly layouts
+- Richer reflections
+- Optional hosted demo video link
+
+---
 
 ## License
 
-This repository does not include a `LICENSE` file yet. If you fork or republish, choose a license that fits how you want the code used.
+No license file yet. Add one if you publish or fork the project.

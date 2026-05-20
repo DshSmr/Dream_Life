@@ -37,7 +37,9 @@ export function resolvePreference(pref: ThemePreference): ResolvedTheme {
 }
 
 function applyDomTheme(resolved: ResolvedTheme) {
-  document.documentElement.setAttribute("data-theme", resolved);
+  const root = document.documentElement;
+  root.setAttribute("data-theme", resolved);
+  root.style.colorScheme = resolved;
 }
 
 export type ThemeContextValue = {
@@ -101,6 +103,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
+      applyDomTheme(resolvePreference(nextPref));
       return nextPref;
     });
   }, []);

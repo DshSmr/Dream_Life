@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { EventItem } from "@/lib/api";
-import { formatLocalDateTimeLong } from "@/lib/datetime";
 import {
-  eventToRawJsonRecord,
-  eventTypeToModule,
-  formatMetadataLabel,
-  formatMetadataValue,
-  isEventPayloadEmpty
-} from "@/lib/eventDetail";
+  activityLifeAreaLabel,
+  buildActivityMomentDetails,
+  formatActivityMomentWhen,
+  mapActivityMoment
+} from "@/lib/activity/momentCopy";
+import { useTranslations } from "@/lib/i18n";
 import { ui } from "@/lib/ui";
 import { X } from "lucide-react";
 
@@ -19,6 +18,7 @@ type EventDetailModalProps = {
 };
 
 export function EventDetailModal({ event, onClose }: EventDetailModalProps) {
+  const { t, locale } = useTranslations("insights.activity");
   const closeRef = useRef<HTMLButtonElement>(null);
   const open = Boolean(event);
 
@@ -44,18 +44,24 @@ export function EventDetailModal({ event, onClose }: EventDetailModalProps) {
     if (open) closeRef.current?.focus();
   }, [open, event?.id]);
 
-  if (!event) return null;
+  const detail = useMemo(() => {
+    if (!event) return null;
+    const now = new Date();
+    const moment = mapActivityMoment(event, t);
+    const when = formatActivityMomentWhen(event.created_at, now, locale, t);
+    const rows = buildActivityMomentDetails(event, t);
+    const area = activityLifeAreaLabel(event.type, t);
+    return { moment, when, rows, area };
+  }, [event, t, locale]);
 
-  const payloadEmpty = isEventPayloadEmpty(event.payload);
-  const sortedKeys = Object.keys(event.payload).sort((a, b) => a.localeCompare(b));
-  const rawJson = JSON.stringify(eventToRawJsonRecord(event), null, 2);
+  if (!event || !detail) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6" role="presentation">
       <button
         type="button"
         className="absolute inset-0 bg-lifeos-nav-overlay backdrop-blur-[2px]"
-        aria-label="Close event details"
+        aria-label={t("detailTitle")}
         onClick={onClose}
       />
       <div
@@ -66,7 +72,7 @@ export function EventDetailModal({ event, onClose }: EventDetailModalProps) {
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-lifeos-border px-5 py-4 sm:px-6">
           <h2 id="event-detail-title" className="text-lg font-semibold text-lifeos-fg">
-            Event details
+            {t("detailTitle")}
           </h2>
           <button
             ref={closeRef}
@@ -78,46 +84,39 @@ export function EventDetailModal({ event, onClose }: EventDetailModalProps) {
             <X className="size-5" strokeWidth={1.75} />
           </button>
         </div>
-
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
           <dl className="space-y-3 text-sm">
             <div>
-              <dt className={`${ui.mutedText} font-medium`}>Type</dt>
-              <dd className="mt-1 font-mono text-[0.8125rem] text-lifeos-fg">{event.type}</dd>
+              <dt className={`${ui.mutedText} font-medium`}>{t("detailWhat")}</dt>
+              <dd className="mt-1 text-lifeos-fg">{detail.moment.headline}</dd>
+              {detail.moment.subline ? (
+                <dd className="mt-0.5 text-lifeos-fg-secondary">{detail.moment.subline}</dd>
+              ) : null}
             </div>
             <div>
-              <dt className={`${ui.mutedText} font-medium`}>Module</dt>
-              <dd className="mt-1 text-lifeos-fg">{eventTypeToModule(event.type)}</dd>
+              <dt className={`${ui.mutedText} font-medium`}>{t("detailArea")}</dt>
+              <dd className="mt-1 text-lifeos-fg">{detail.area}</dd>
             </div>
             <div>
-              <dt className={`${ui.mutedText} font-medium`}>Time</dt>
-              <dd className="mt-1 tabular-nums text-lifeos-fg">{formatLocalDateTimeLong(event.created_at)}</dd>
+              <dt className={`${ui.mutedText} font-medium`}>{t("detailWhen")}</dt>
+              <dd className="mt-1 tabular-nums text-lifeos-fg">{detail.when}</dd>
             </div>
           </dl>
 
           <div className="mt-6">
-            <p className="text-xs font-semibold uppercase tracking-wide text-lifeos-accent">Metadata</p>
-            {payloadEmpty ? (
-              <p className={`mt-2 text-sm ${ui.mutedText}`}>No metadata</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-lifeos-accent">{t("detailMore")}</p>
+            {detail.rows.length === 0 ? (
+              <p className={`mt-2 text-sm ${ui.mutedText}`}>{t("detailNothingElse")}</p>
             ) : (
               <dl className="mt-3 space-y-2 rounded-xl border border-lifeos-border bg-lifeos-inset p-4">
-                {sortedKeys.map((key) => (
-                  <div key={key} className="grid gap-1 sm:grid-cols-[minmax(0,0.35fr)_minmax(0,1fr)] sm:gap-3">
-                    <dt className={`break-words text-sm ${ui.mutedText}`}>{formatMetadataLabel(key)}</dt>
-                    <dd className="break-words font-mono text-[0.8125rem] text-lifeos-fg-secondary">{formatMetadataValue(event.payload[key])}</dd>
+                {detail.rows.map((row) => (
+                  <div key={row.label} className="grid gap-1 sm:grid-cols-[minmax(0,0.35fr)_minmax(0,1fr)] sm:gap-3">
+                    <dt className={`break-words text-sm ${ui.mutedText}`}>{row.label}</dt>
+                    <dd className="break-words text-sm text-lifeos-fg-secondary">{row.value}</dd>
                   </div>
                 ))}
               </dl>
             )}
-          </div>
-
-          <div className="mt-6">
-            <p className="text-xs font-semibold uppercase tracking-wide text-lifeos-accent">Raw JSON</p>
-            <pre
-              className={`${ui.codeBlock} mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[0.75rem] leading-relaxed text-lifeos-fg-secondary`}
-            >
-              {rawJson}
-            </pre>
           </div>
         </div>
       </div>

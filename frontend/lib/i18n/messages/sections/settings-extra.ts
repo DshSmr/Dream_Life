@@ -1,0 +1,48 @@
+export const settingsExtraMessages = {
+  pageDescription: "How Dream Life behaves on this device.",
+  directionTitle: "Your direction",
+  directionDescription: "A single long-term dream to keep the app grounded, not a goal tracker.",
+  personalizationTitle: "Personalization",
+  personalizationDescription: "Defaults until you save. Local only.",
+  focusLength: "Preferred focus length (minutes)",
+  focusLengthHint: "Used for Pomodoro and the daily plan.",
+  spendingLimit: "Daily spending limit (€)",
+  spendingLimitHint: "Finance alerts use this limit.",
+  cleaningFreq: "Default cleaning frequency (days)",
+  cleaningFreqHint: "Default when you add a zone.",
+  workdayStart: "Workday start",
+  workdayEnd: "Workday end",
+  workdayHint: "Daily plans and gentle nudges use these hours.",
+  savePersonalization: "Save personalization",
+  resetDefaults: "Reset to defaults",
+  saved: "Saved.",
+  nudgesTitle: "Gentle nudges",
+  nudgesDescription: "Choose which reminders feel helpful. Saved on this device.",
+  nudgesEmpty: "No nudges are set up yet.",
+  categoryCleaning: "Cleaning",
+  categoryFocus: "Focus & work",
+  categoryGoals: "Goals",
+  categoryInsights: "Gentle nudges",
+  toggleOn: "On",
+  toggleOff: "Off",
+  data: {
+    title: "Data",
+    description: "Remove logged activity from this device. Your direction, theme, language, and preferences stay as they are.",
+    action: "Clear app history",
+    footnote:
+      "Clear history keeps your goals, tasks, and home areas. Reset all data removes those too. Theme, language, and preferences always stay.",
+    resetAllAction: "Reset all data",
+    resetAllModalTitle: "Reset all data?",
+    resetAllModalBody:
+      "This removes everything in the app: activity, sessions, money logs, reviews, goals, tasks, and home areas. Your theme, language, and preferences will stay the same.",
+    resetAllConfirm: "Reset all data",
+    resetAllSuccess: "Everything was cleared. You can start fresh.",
+    modalTitle: "Clear app history?",
+    modalBody:
+      "This will remove logged activity, sessions, transactions, cleaning history, and saved reviews. Your settings and preferences will stay the same.",
+    cancel: "Cancel",
+    confirm: "Clear history",
+    clearing: "Clearing…",
+    success: "History cleared. Your app is ready for a fresh start."
+  }
+} as const;

@@ -13,7 +13,7 @@ import { generateNextActions } from "@/lib/recommendations";
 import { computeSystemStatus } from "@/lib/systemStatus";
 import { generateRuleInsights } from "@/services/insights";
 import { getResolvedUserPreferences } from "@/services/preferences";
-import { mapEventToTimelineCopy } from "@/lib/timeline/eventLabels";
+import { createLifeFlowT, mapEventToTimelineCopy } from "@/lib/timeline/lifeFlowCopy";
 
 const PRIORITY_RANK: Record<TaskItem["priority"], number> = {
   high: 0,
@@ -135,7 +135,7 @@ function selectTopOpenTasks(tasks: TaskItem[], now: Date, limit: number): DailyA
 function buildTimelineSummary(events: EventItem[], dayKey: string, limit: number): DailyAIContextTimelineLine[] {
   const dayEvents = filterEventsOnLocalDay(events, dayKey);
   const withCopy = dayEvents.map((e) => {
-    const { headline, detail } = mapEventToTimelineCopy(e);
+    const { headline, detail } = mapEventToTimelineCopy(e, createLifeFlowT("en"));
     return { at: e.created_at, type: e.type, headline, detail };
   });
   withCopy.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());

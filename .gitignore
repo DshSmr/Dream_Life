@@ -6,3 +6,6 @@ __pycache__/
 .next/
 node_modules/
 dist/
+
+# Local demo walkthrough (~300MB+); keep in docs/ for README viewing, do not commit
+docs/Dream_life_demo.mp4

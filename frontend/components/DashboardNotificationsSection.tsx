@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { sendWithOfflineQueue } from "@/services/offlineQueue";
 import { API_URL, CleaningZone, FocusSession, TaskItem } from "@/lib/api";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { Button } from "@/components/ui/button";
 import { WhyMuted } from "@/components/explainability/WhyLine";
 import { ui } from "@/lib/ui";
@@ -13,6 +14,7 @@ import { ds } from "@/styles/design-system";
 import { cn } from "@/lib/utils";
 import { useAutomationPrefsEpoch } from "@/hooks/useAutomationPrefsEpoch";
 import { useUserPreferencesEpoch } from "@/hooks/useUserPreferencesEpoch";
+import { useTranslations } from "@/lib/i18n";
 import {
   categoryNotificationEmoji,
   generateNotifications,
@@ -39,6 +41,8 @@ export function DashboardNotificationsSection({
   expensesTodayTotal,
   onRefresh
 }: Props) {
+  const { t } = useTranslations("dashboard.notifications");
+  const { t: tToast } = useTranslations("common");
   const automationPrefsEpoch = useAutomationPrefsEpoch();
   const userPrefsEpoch = useUserPreferencesEpoch();
   const router = useRouter();
@@ -96,13 +100,13 @@ export function DashboardNotificationsSection({
                 })
             );
             if (result.mode === "queued") {
-              toast.info("Pending sync", { description: "Saved locally." });
+              toast.info(tToast("toast.savedForNow"), { description: tToast("toast.savedOfflineShort") });
               markRead(n.id);
               await onRefresh?.();
               return;
             }
             if (!result.response.ok) throw new Error("focus");
-            toast.success("Focus session started");
+            toast.success(tToast("toast.focusStarted"));
             markRead(n.id);
             await onRefresh?.();
             router.push("/work/focus");
@@ -120,13 +124,13 @@ export function DashboardNotificationsSection({
               })
             );
             if (result.mode === "queued") {
-              toast.info("Pending sync", { description: "Cleaning logged locally." });
+              toast.info(tToast("toast.savedForNow"), { description: tToast("toast.savedOfflineShort") });
               markRead(n.id);
               await onRefresh?.();
               return;
             }
             if (!result.response.ok) throw new Error("cleaning");
-            toast.success("Marked as cleaned");
+            toast.success(tToast("toast.markedCleaned"));
             markRead(n.id);
             await onRefresh?.();
             return;
@@ -134,13 +138,13 @@ export function DashboardNotificationsSection({
 
           throw new Error("unknown");
         } catch {
-          toast.error("Could not complete action");
+          toast.error(tToast("toast.couldNotComplete"));
         } finally {
           setActionBusyId(null);
         }
       }
     },
-    [markRead, onRefresh, router]
+    [markRead, onRefresh, router, tToast]
   );
 
   function typeAccentBar(t: AppNotification["type"]): string {
@@ -153,10 +157,8 @@ export function DashboardNotificationsSection({
     <section className={ds.surfaces.contentPanelCompact}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">Notifications</h2>
-          <p className={`mt-1 text-sm ${ui.mutedText}`}>
-            Same items as the bell. Full list works well on larger screens.
-          </p>
+          <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">{t("title")}</h2>
+          <p className={`mt-1 text-sm ${ui.mutedText}`}>{t("subtitle")}</p>
         </div>
       </div>
 
@@ -188,23 +190,25 @@ export function DashboardNotificationsSection({
                           onClick={() => void runAction(n)}
                           type="button"
                         >
-                          {actionBusyId === n.id ? "Working…" : n.action.label}
+                          {actionBusyId === n.id ? t("working") : n.action.label}
                         </Button>
                       </div>
                     ) : null}
                   </div>
-                  {!n.read ? <span className="mt-1 size-2 shrink-0 rounded-full bg-lifeos-accent/80" title="Unread" /> : null}
+                  {!n.read ? <span className="mt-1 size-2 shrink-0 rounded-full bg-lifeos-accent/80" title={t("unread")} /> : null}
                 </div>
               </article>
             </li>
           ))}
         </ul>
       ) : (
-        <div className={cn("mt-4", ds.surfaces.toneWell)}>
-          <p className={`text-sm ${ui.mutedText}`}>
-            <span className="font-medium text-lifeos-fg-secondary">You&apos;re caught up.</span> No actionable notifications right now.
-          </p>
-        </div>
+        <CalmEmptyState
+          tone="notifications"
+          size="comfortable"
+          className="mt-4"
+          title={t("emptyTitle")}
+          description={t("emptyDescription")}
+        />
       )}
     </section>
   );

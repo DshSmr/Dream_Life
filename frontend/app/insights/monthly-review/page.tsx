@@ -17,12 +17,13 @@ import {
   mostProductiveLocalDay,
   normalizeAnalyticsEvents
 } from "@/lib/analytics";
-import { computeHomeHealthScore, mostOverdueZone } from "@/lib/cleaningHealth";
+import { computeHomeHealthScore, mostOverdueZone, type HomeHealthLevel } from "@/lib/cleaningHealth";
 import { formatDateFiNumeric, getLocalMonthRangeIso, localCalendarDayKeyFromDate } from "@/lib/datetime";
 import type { BehaviorPattern } from "@/lib/patterns";
 import { topExpenseCategoryInRange } from "@/lib/weeklyReviewInsights";
 import { ui } from "@/lib/ui";
 import { ds } from "@/styles/design-system";
+import { homeHealthLevelClass, moneyInValueClass, signedDeltaValueClass } from "@/lib/semanticTone";
 import { cn } from "@/lib/utils";
 import {
   BodyText,
@@ -34,6 +35,7 @@ import {
   SectionTitle
 } from "@/components/ui/typography";
 import { PageSectionSkeleton } from "@/components/ui/skeleton";
+import { useTranslations } from "@/lib/i18n";
 
 function formatEur(value: number): string {
   return `€${value.toFixed(2)}`;
@@ -59,6 +61,7 @@ function averageHomeHealthInLocalMonth(snapshots: DailySnapshot[], ref: Date): n
 }
 
 export default function MonthlyReviewPage() {
+  const { t } = useTranslations("insights.monthlyReview");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [zones, setZones] = useState<CleaningZone[]>([]);
   const [financeSummary, setFinanceSummary] = useState<FinanceRangeSummary | null>(null);
@@ -156,6 +159,14 @@ export default function MonthlyReviewPage() {
   const currentHomeHealth = useMemo(() => computeHomeHealthScore(zones), [zones]);
   const worstZone = useMemo(() => mostOverdueZone(zones), [zones]);
 
+  const homeRhythm = useMemo((): { label: string | null; level: HomeHealthLevel | null } => {
+    const percent = avgHomeHealth ?? currentHomeHealth?.scorePercent ?? null;
+    if (percent == null) return { label: null, level: null };
+    if (percent >= 80) return { label: t("homeRhythmComfortable"), level: "healthy" };
+    if (percent >= 50) return { label: t("homeRhythmMostlyGood"), level: "needs_attention" };
+    return { label: t("homeRhythmNeedsRefresh"), level: "critical" };
+  }, [avgHomeHealth, currentHomeHealth, t]);
+
   async function generateMonthlyAi() {
     setAiLoading(true);
     setAiError(null);
@@ -183,10 +194,8 @@ export default function MonthlyReviewPage() {
     <div className={ui.contentClass}>
       <section className={ui.panelClass}>
         <div className="space-y-ds-2">
-          <PageTitle>Monthly review</PageTitle>
-          <MutedText className={ds.typography.proseMax}>
-            How did this month go? Range uses your local calendar month.
-          </MutedText>
+          <PageTitle>{t("pageTitle")}</PageTitle>
+          <MutedText className={ds.typography.proseMax}>{t("pageDescription")}</MutedText>
           <p className={cn(ds.typography.bodySecondary, "text-lifeos-fg-muted")}>{monthTitle}</p>
         </div>
 
@@ -200,55 +209,59 @@ export default function MonthlyReviewPage() {
         {!loading && !error && (
           <div className="mt-8 space-y-8">
             <section className={ds.surfaces.contentPanel}>
-              <SectionTitle>Productivity</SectionTitle>
+              <SectionTitle>{t("work")}</SectionTitle>
               <dl className="mt-ds-5 grid gap-ds-5 sm:grid-cols-3">
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Tasks completed</MetricLabel>
+                  <MetricLabel as="dt">{t("tasksCompleted")}</MetricLabel>
                   <MetricValue as="dd">{monthlyStats.tasksCompleted}</MetricValue>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Focus minutes</MetricLabel>
+                  <MetricLabel as="dt">{t("focusMinutes")}</MetricLabel>
                   <MetricValue as="dd">{monthlyStats.focusMinutes}</MetricValue>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Most productive day</MetricLabel>
+                  <MetricLabel as="dt">{t("moreActiveDay")}</MetricLabel>
                   <CardTitle as="dd" className="mt-0">
                     {bestDay ? formatDayKeyLabel(bestDay.dayKey) : "—"}
                   </CardTitle>
                   {bestDay && (
                     <BodyText as="p" className={cn(ds.typography.bodyMuted, "pt-ds-1")}>
-                      {bestDay.tasksCompleted} tasks · {bestDay.focusMinutes} focus min
+                      {t("activeDayNote")}
                     </BodyText>
                   )}
                   {!bestDay && (
                     <BodyText as="p" className={ds.typography.bodyMuted}>
-                      No tasks or focus in this window yet.
+                      {t("noWorkLogged")}
                     </BodyText>
                   )}
                 </div>
               </dl>
               <BodyText as="p" className={cn(ds.typography.bodyMuted, "mt-ds-5")}>
-                Pomodoros completed: {monthEventCounts.pomodoro_completed ?? 0}
+                {t("pomodorosCompleted", { count: monthEventCounts.pomodoro_completed ?? 0 })}
               </BodyText>
             </section>
 
             <section className={ds.surfaces.contentPanel}>
-              <SectionTitle>Finance</SectionTitle>
+              <SectionTitle>{t("finance")}</SectionTitle>
               <dl className="mt-ds-5 grid gap-ds-5 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Income</MetricLabel>
-                  <MetricValue as="dd">{formatEur(financeBlock.income)}</MetricValue>
+                  <MetricLabel as="dt">{t("income")}</MetricLabel>
+                  <MetricValue as="dd" className={moneyInValueClass(financeBlock.income)}>
+                    {formatEur(financeBlock.income)}
+                  </MetricValue>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Expenses</MetricLabel>
+                  <MetricLabel as="dt">{t("expenses")}</MetricLabel>
                   <MetricValue as="dd">{formatEur(financeBlock.expense)}</MetricValue>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Balance</MetricLabel>
-                  <MetricValue as="dd">{formatEur(financeBlock.balance)}</MetricValue>
+                  <MetricLabel as="dt">{t("balance")}</MetricLabel>
+                  <MetricValue as="dd" className={signedDeltaValueClass(financeBlock.balance)}>
+                    {formatEur(financeBlock.balance)}
+                  </MetricValue>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Top spending category</MetricLabel>
+                  <MetricLabel as="dt">{t("spendingMostNoted")}</MetricLabel>
                   <CardTitle as="dd" className="mt-0">
                     {financeBlock.topCategory ?? "—"}
                   </CardTitle>
@@ -262,15 +275,11 @@ export default function MonthlyReviewPage() {
             </section>
 
             <section className={ds.surfaces.contentPanel}>
-              <SectionTitle>Behavior patterns</SectionTitle>
-              <MutedText className={cn("mt-ds-2", ds.typography.proseMax)}>
-                Counts from the API. Separate from the monthly draft.
-              </MutedText>
+              <SectionTitle>{t("patternsTitle")}</SectionTitle>
+              <MutedText className={cn("mt-ds-2", ds.typography.proseMax)}>{t("patternsHint")}</MutedText>
               {behaviorPatterns.length === 0 ? (
                 <MutedText className="mt-ds-5 max-w-[65ch]">
-                  {behaviorPatternsInsufficient
-                    ? "Not enough data to detect behavioral patterns yet. Log activity across several distinct days (focus, cleaning, categorized expenses) before reading trends here."
-                    : "No pattern cleared the bar for this window — keep logging focus, snapshots, and categorized expenses."}
+                  {behaviorPatternsInsufficient ? t("patternsInsufficient") : t("patternsNone")}
                 </MutedText>
               ) : (
                 <ul className="mt-ds-5 space-y-ds-3">
@@ -279,9 +288,7 @@ export default function MonthlyReviewPage() {
                       key={p.id}
                       className="rounded-xl bg-lifeos-muted/35 px-4 py-3 shadow-inner"
                     >
-                      <span className={ds.typography.labelMicro}>
-                        {p.category} · {(p.confidence * 100).toFixed(0)}%
-                      </span>
+                      <span className={ds.typography.labelMicro}>{p.category}</span>
                       <BodyText as="p" className="mt-ds-2 text-lifeos-fg-secondary">
                         {p.message}
                       </BodyText>
@@ -292,36 +299,38 @@ export default function MonthlyReviewPage() {
             </section>
 
             <section className={ds.surfaces.contentPanel}>
-              <SectionTitle>Home</SectionTitle>
+              <SectionTitle>{t("home")}</SectionTitle>
               <dl className="mt-ds-5 grid gap-ds-5 sm:grid-cols-3">
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Cleaning actions</MetricLabel>
+                  <MetricLabel as="dt">{t("cleaningActions")}</MetricLabel>
                   <MetricValue as="dd">{monthlyStats.cleaningActions}</MetricValue>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Average home health score</MetricLabel>
-                  <MetricValue as="dd">{avgHomeHealth != null ? `${avgHomeHealth}%` : "—"}</MetricValue>
+                  <MetricLabel as="dt">{t("homeRhythm")}</MetricLabel>
+                  <MetricValue as="dd" className={homeRhythm.level ? homeHealthLevelClass(homeRhythm.level) : undefined}>
+                    {homeRhythm.label ?? "—"}
+                  </MetricValue>
                   <BodyText as="p" className={cn(ds.typography.bodyMuted, "pt-ds-1")}>
-                    {avgHomeHealth != null
-                      ? "Mean of daily snapshot scores in this month (when snapshots exist)."
-                      : currentHomeHealth != null
-                        ? `No snapshot samples this month; current score: ${currentHomeHealth.scorePercent}%.`
-                        : "Add cleaning zones and generate daily snapshots to see a monthly average."}
+                    {homeRhythm.label
+                      ? t("homeRhythmHint")
+                      : zones.length === 0
+                        ? t("addZonesHint")
+                        : null}
                   </BodyText>
                 </div>
                 <div className="space-y-ds-2">
-                  <MetricLabel as="dt">Most overdue zone</MetricLabel>
+                  <MetricLabel as="dt">{t("spaceWaitingCare")}</MetricLabel>
                   <CardTitle as="dd" className="mt-0">
                     {worstZone?.name ?? "—"}
                   </CardTitle>
                   {!worstZone && zones.length > 0 && (
                     <BodyText as="p" className={ds.typography.bodyMuted}>
-                      No overdue zones right now.
+                      {t("noOverdue")}
                     </BodyText>
                   )}
                   {zones.length === 0 && (
                     <BodyText as="p" className={ds.typography.bodyMuted}>
-                      No zones configured.
+                      {t("noZones")}
                     </BodyText>
                   )}
                 </div>
@@ -336,10 +345,8 @@ export default function MonthlyReviewPage() {
             >
               <div className="flex flex-col gap-ds-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-ds-2">
-                  <SectionTitle>AI month summary</SectionTitle>
-                  <MutedText className={ds.typography.proseMax}>
-                    Generated on demand from the same month window; does not auto-load.
-                  </MutedText>
+                  <SectionTitle>{t("monthReflection")}</SectionTitle>
+                  <MutedText className={ds.typography.proseMax}>{t("reflectionHint")}</MutedText>
                 </div>
                 <button
                   type="button"
@@ -347,7 +354,7 @@ export default function MonthlyReviewPage() {
                   disabled={aiLoading}
                   className="shrink-0 rounded-xl bg-lifeos-accent-soft px-4 py-2 text-lifeos-body font-medium text-lifeos-accent shadow-sm transition hover:bg-lifeos-accent/15 disabled:opacity-50"
                 >
-                  {aiLoading ? "Working…" : "Generate AI summary"}
+                  {aiLoading ? t("working") : t("writeReflection")}
                 </button>
               </div>
 
@@ -359,7 +366,7 @@ export default function MonthlyReviewPage() {
 
               {!monthlyAi && !aiLoading && !aiError && (
                 <MutedText className="mt-ds-5 max-w-[62ch]">
-                  Run the generator when you want wins, risks, and focus ideas.
+                  {t("tapPrompt")}
                 </MutedText>
               )}
 
@@ -371,7 +378,7 @@ export default function MonthlyReviewPage() {
                     </BodyText>
                     {monthlyAi.fallback && (
                       <span className="rounded-md bg-lifeos-muted/50 px-2 py-0.5 text-lifeos-caption text-lifeos-fg-muted shadow-sm">
-                        Rule-based fallback
+                        {t("simpleVersion")}
                       </span>
                     )}
                   </div>
@@ -379,7 +386,7 @@ export default function MonthlyReviewPage() {
 
                   <div className="grid gap-ds-6 md:grid-cols-2">
                     <div>
-                      <CardTitle className="text-lifeos-success">Wins</CardTitle>
+                      <CardTitle className="text-lifeos-success">{t("brightSpots")}</CardTitle>
                       <ul className="mt-ds-3 space-y-ds-2">
                         {(monthlyAi.wins.length ? monthlyAi.wins : ["—"]).map((line) => (
                           <li key={line}>
@@ -391,7 +398,7 @@ export default function MonthlyReviewPage() {
                       </ul>
                     </div>
                     <div>
-                      <CardTitle className="text-lifeos-warning">Risks</CardTitle>
+                      <CardTitle className="text-lifeos-warning">{t("worthNoticing")}</CardTitle>
                       <ul className="mt-ds-3 space-y-ds-2">
                         {(monthlyAi.risks.length ? monthlyAi.risks : ["—"]).map((line) => (
                           <li key={line}>
@@ -403,7 +410,7 @@ export default function MonthlyReviewPage() {
                       </ul>
                     </div>
                     <div>
-                      <CardTitle className="text-lifeos-status-neutral">Patterns</CardTitle>
+                      <CardTitle className="text-lifeos-status-neutral">{t("patterns")}</CardTitle>
                       <ul className="mt-ds-3 space-y-ds-2">
                         {(monthlyAi.patterns.length ? monthlyAi.patterns : ["—"]).map((line) => (
                           <li key={line}>
@@ -415,7 +422,7 @@ export default function MonthlyReviewPage() {
                       </ul>
                     </div>
                     <div>
-                      <CardTitle className="text-lifeos-accent">Next month focus</CardTitle>
+                      <CardTitle className="text-lifeos-accent">{t("nextMonthFocus")}</CardTitle>
                       <ul className="mt-ds-3 space-y-ds-2">
                         {(monthlyAi.nextMonthFocus.length ? monthlyAi.nextMonthFocus : ["—"]).map((line) => (
                           <li key={line}>

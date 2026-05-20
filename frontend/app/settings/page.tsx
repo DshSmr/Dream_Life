@@ -5,12 +5,17 @@ import Link from "next/link";
 import { ui } from "@/lib/ui";
 import { ds } from "@/styles/design-system";
 import { Surface } from "@/components/ui/Surface";
-import { ThemePreferenceRadios } from "@/components/theme/ThemePreferenceRadios";
+import { DreamDirectionSettings } from "@/components/dream/DreamDirectionSettings";
+import { LanguagePreferenceSelect } from "@/components/settings/LanguagePreferenceSelect";
+import { SettingsField } from "@/components/settings/SettingsField";
+import { formFieldClassName } from "@/lib/form-control";
+import { ThemePreferenceSelect } from "@/components/theme/ThemePreferenceSelect";
 import { BodyText, LabelText, MutedText, PageTitle, SectionTitle } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
 import { AUTOMATION_RULE_SETTING_CATALOG } from "@/services/automation/ruleSettingCatalog";
 import type { AutomationSetting, AutomationSettingCategory } from "@/services/automation/settingsTypes";
 import { getAutomationSettingsForUi, setAutomationRuleEnabled } from "@/services/automation/settingsStorage";
+import { useTranslations } from "@/lib/i18n";
 import {
   DEFAULT_USER_PREFERENCES,
   type UserPreferences,
@@ -19,14 +24,14 @@ import {
   USER_PREFERENCES_CHANGED_EVENT
 } from "@/services/preferences";
 
-const CATEGORY_LABEL: Record<AutomationSettingCategory, string> = {
-  cleaning: "Cleaning",
-  focus: "Focus & productivity",
-  goals: "Goals",
-  insights: "Insights & finance nudges"
-};
-
 const CATEGORY_ORDER: AutomationSettingCategory[] = ["cleaning", "focus", "goals", "insights"];
+
+function categoryLabel(cat: AutomationSettingCategory, t: (key: string) => string): string {
+  if (cat === "cleaning") return t("categoryCleaning");
+  if (cat === "focus") return t("categoryFocus");
+  if (cat === "goals") return t("categoryGoals");
+  return t("categoryInsights");
+}
 
 function groupByCategory(settings: AutomationSetting[]): Map<AutomationSettingCategory, AutomationSetting[]> {
   const map = new Map<AutomationSettingCategory, AutomationSetting[]>();
@@ -38,54 +43,17 @@ function groupByCategory(settings: AutomationSetting[]): Map<AutomationSettingCa
   return map;
 }
 
-const LOCALE_STORAGE_KEY = "lifeos-locale";
-
-function LanguageSection() {
-  const [locale, setLocale] = useState("en");
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-      if (stored === "en") setLocale(stored);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  function onChange(next: string) {
-    setLocale(next);
-    try {
-      localStorage.setItem(LOCALE_STORAGE_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  return (
-    <Surface variant="secondary" className="mt-6">
-      <SectionTitle as="h2">Language</SectionTitle>
-      <MutedText className={cn("mt-ds-2", ds.typography.proseMax)}>Interface language for this browser.</MutedText>
-      <div className="mt-ds-5 max-w-sm">
-        <label className={ds.typography.uiLabel} htmlFor="lifeos-locale-select">
-          Display language
-        </label>
-        <select
-          id="lifeos-locale-select"
-          value={locale}
-          onChange={(e) => onChange(e.target.value)}
-          className={`${ui.inputClass} h-10 w-full max-w-xs`}
-        >
-          <option value="en">English</option>
-        </select>
-        <BodyText as="p" className={cn(ds.typography.bodyMuted, "mt-ds-2")}>
-          Additional languages may be added in a future update.
-        </BodyText>
-      </div>
-    </Surface>
-  );
-}
-
-function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+function ToggleSwitch({
+  enabled,
+  onToggle,
+  onLabel,
+  offLabel
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  onLabel: string;
+  offLabel: string;
+}) {
   return (
     <button
       type="button"
@@ -101,12 +69,13 @@ function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
           enabled ? "translate-x-5" : "translate-x-0"
         }`}
       />
-      <span className="sr-only">{enabled ? "On" : "Off"}</span>
+      <span className="sr-only">{enabled ? onLabel : offLabel}</span>
     </button>
   );
 }
 
 function PersonalizationForm() {
+  const { t } = useTranslations("settings");
   const [prefs, setPrefs] = useState<UserPreferences>(() => getResolvedUserPreferences());
   const [savedHint, setSavedHint] = useState(false);
 
@@ -141,13 +110,18 @@ function PersonalizationForm() {
     });
   }
 
+  const inputClass = cn(formFieldClassName(), "w-full tabular-nums");
+  const timeInputClass = cn(
+    formFieldClassName(),
+    "w-full min-w-0 appearance-none",
+    "[&::-webkit-calendar-picker-indicator]:ml-auto [&::-webkit-calendar-picker-indicator]:size-4 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50",
+    "[&::-webkit-datetime-edit-fields-wrapper]:p-0 [&::-webkit-datetime-edit]:p-0"
+  );
+
   return (
-    <form className="mt-6 space-y-5" onSubmit={onSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <label className={ds.typography.uiLabel} htmlFor="pref-focus">
-            Preferred focus length (minutes)
-          </label>
+    <form className="mt-ds-6 space-y-ds-7" onSubmit={onSubmit}>
+      <div className="grid items-start gap-x-ds-5 gap-y-ds-6 sm:grid-cols-2">
+        <SettingsField id="pref-focus" label={t("focusLength")} hint={t("focusLengthHint")}>
           <input
             id="pref-focus"
             type="number"
@@ -155,36 +129,29 @@ function PersonalizationForm() {
             max={180}
             step={1}
             required
-            className={`${ui.inputClass} h-10 tabular-nums`}
+            className={inputClass}
             value={prefs.focusLengthMinutes}
             onChange={(ev) => setPrefs((p) => ({ ...p, focusLengthMinutes: Number(ev.target.value) }))}
           />
-          <BodyText as="p" className={ds.typography.bodyMuted}>
-            Used for Pomodoro and the daily plan.
-          </BodyText>
-        </div>
-        <div className="grid gap-2">
-          <label className={ds.typography.uiLabel} htmlFor="pref-spend">
-            Daily spending limit (€)
-          </label>
+        </SettingsField>
+        <SettingsField id="pref-spend" label={t("spendingLimit")} hint={t("spendingLimitHint")}>
           <input
             id="pref-spend"
             type="number"
             min={1}
             step={1}
             required
-            className={`${ui.inputClass} h-10 tabular-nums`}
+            className={inputClass}
             value={prefs.dailySpendingLimit}
             onChange={(ev) => setPrefs((p) => ({ ...p, dailySpendingLimit: Number(ev.target.value) }))}
           />
-          <BodyText as="p" className={ds.typography.bodyMuted}>
-            Finance alerts use this limit.
-          </BodyText>
-        </div>
-        <div className="grid gap-2 sm:col-span-2">
-          <label className={ds.typography.uiLabel} htmlFor="pref-clean-freq">
-            Default cleaning frequency (days)
-          </label>
+        </SettingsField>
+        <SettingsField
+          id="pref-clean-freq"
+          label={t("cleaningFreq")}
+          hint={t("cleaningFreqHint")}
+          className="sm:col-span-2"
+        >
           <input
             id="pref-clean-freq"
             type="number"
@@ -192,65 +159,74 @@ function PersonalizationForm() {
             max={365}
             step={1}
             required
-            className={`${ui.inputClass} h-10 max-w-xs tabular-nums`}
+            className={cn(inputClass, "max-w-xs")}
             value={prefs.defaultCleaningFrequencyDays}
             onChange={(ev) => setPrefs((p) => ({ ...p, defaultCleaningFrequencyDays: Number(ev.target.value) }))}
           />
-          <BodyText as="p" className={ds.typography.bodyMuted}>
-            Default when you add a zone.
-          </BodyText>
-        </div>
-        <div className="grid gap-2">
-          <label className={ds.typography.uiLabel} htmlFor="pref-work-start">
-            Workday start
-          </label>
-          <input
-            id="pref-work-start"
-            type="time"
-            required
-            className={`${ui.inputClass} h-10`}
-            value={prefs.workdayStart}
-            onChange={(ev) => setPrefs((p) => ({ ...p, workdayStart: ev.target.value }))}
-          />
-        </div>
-        <div className="grid gap-2">
-          <label className={ds.typography.uiLabel} htmlFor="pref-work-end">
-            Workday end
-          </label>
-          <input
-            id="pref-work-end"
-            type="time"
-            required
-            className={`${ui.inputClass} h-10`}
-            value={prefs.workdayEnd}
-            onChange={(ev) => setPrefs((p) => ({ ...p, workdayEnd: ev.target.value }))}
-          />
-          <BodyText as="p" className={ds.typography.bodyMuted}>
-            Daily plan and a few suggestions use this window (local time).
-          </BodyText>
-        </div>
+        </SettingsField>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          className={cn(ui.secondaryButton, "min-h-10 border-lifeos-accent bg-lifeos-accent/15 text-lifeos-accent hover:bg-lifeos-accent/25")}
-        >
-          Save personalization
+
+      <div className="space-y-ds-3">
+        <div className="grid items-start gap-x-ds-5 gap-y-ds-3 sm:grid-cols-2">
+          <SettingsField id="pref-work-start" label={t("workdayStart")}>
+            <input
+              id="pref-work-start"
+              type="time"
+              required
+              className={timeInputClass}
+              value={prefs.workdayStart}
+              onChange={(ev) => setPrefs((p) => ({ ...p, workdayStart: ev.target.value }))}
+            />
+          </SettingsField>
+          <SettingsField id="pref-work-end" label={t("workdayEnd")}>
+            <input
+              id="pref-work-end"
+              type="time"
+              required
+              className={timeInputClass}
+              value={prefs.workdayEnd}
+              onChange={(ev) => setPrefs((p) => ({ ...p, workdayEnd: ev.target.value }))}
+            />
+          </SettingsField>
+        </div>
+        <BodyText as="p" className={cn(ds.typography.bodyMuted, "max-w-prose leading-relaxed")}>
+          {t("workdayHint")}
+        </BodyText>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-ds-3 border-t border-lifeos-border-subtle/10 pt-ds-6">
+        <button type="submit" className={cn(ui.primaryButton, "min-h-10 px-ds-5")}>
+          {t("savePersonalization")}
         </button>
         <button
           type="button"
-          className={cn(ds.typography.bodySecondary, "text-lifeos-fg-muted underline-offset-2 hover:underline")}
-          onClick={() => commit(DEFAULT_USER_PREFERENCES)}
+          className={cn(
+            ds.typography.bodySecondary,
+            "min-h-10 rounded-ds-button px-ds-3 text-lifeos-fg-muted transition-colors duration-lifeos-normal ease-lifeos hover:bg-lifeos-hover/40 hover:text-lifeos-fg-secondary"
+          )}
+          onClick={() =>
+            commit({
+              ...prefs,
+              focusLengthMinutes: DEFAULT_USER_PREFERENCES.focusLengthMinutes,
+              dailySpendingLimit: DEFAULT_USER_PREFERENCES.dailySpendingLimit,
+              defaultCleaningFrequencyDays: DEFAULT_USER_PREFERENCES.defaultCleaningFrequencyDays,
+              workdayStart: DEFAULT_USER_PREFERENCES.workdayStart,
+              workdayEnd: DEFAULT_USER_PREFERENCES.workdayEnd
+            })
+          }
         >
-          Reset to defaults
+          {t("resetDefaults")}
         </button>
-        {savedHint ? <span className={cn(ds.typography.bodySecondary, "text-lifeos-success")}>Saved.</span> : null}
+        {savedHint ? (
+          <span className={cn(ds.typography.bodySecondary, "text-lifeos-success")}>{t("saved")}</span>
+        ) : null}
       </div>
     </form>
   );
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslations("settings");
   const [settings, setSettings] = useState<AutomationSetting[]>(() => getAutomationSettingsForUi());
 
   const refresh = useCallback(() => {
@@ -272,41 +248,47 @@ export default function SettingsPage() {
   return (
     <div className={ui.contentClass}>
       <section className={ui.panelClass}>
-        <PageTitle>Settings</PageTitle>
-        <MutedText className={cn("mt-ds-4", ds.typography.proseMax)}>
-          Automations and defaults for this browser.
-        </MutedText>
+        <PageTitle>{t("pageTitle")}</PageTitle>
+        <MutedText className={cn("mt-ds-4", ds.typography.proseMax)}>{t("pageDescription")}</MutedText>
 
         <Surface variant="primary" className="mt-6 space-y-ds-4">
           <div className="space-y-ds-2">
-            <SectionTitle>Appearance</SectionTitle>
-            <MutedText className={ds.typography.proseMax}>
-              Dark, light, or match your OS. Preference is saved in this browser.
-            </MutedText>
+            <SectionTitle>{t("appearance.title")}</SectionTitle>
+            <MutedText className={ds.typography.proseMax}>{t("appearance.description")}</MutedText>
           </div>
-          <div className="max-w-md">
-            <ThemePreferenceRadios />
+          <div className="max-w-sm">
+            <ThemePreferenceSelect />
           </div>
         </Surface>
 
-        <LanguageSection />
+        <Surface variant="primary" className="mt-6 space-y-ds-4">
+          <LanguagePreferenceSelect embedded />
+        </Surface>
 
         <Surface variant="primary" className="mt-6 space-y-ds-4">
           <div className="space-y-ds-2">
-            <SectionTitle>Personalization</SectionTitle>
-            <MutedText className={ds.typography.proseMax}>Defaults until you save. Local only.</MutedText>
+            <SectionTitle>{t("directionTitle")}</SectionTitle>
+            <MutedText className={ds.typography.proseMax}>{t("directionDescription")}</MutedText>
+          </div>
+          <DreamDirectionSettings />
+        </Surface>
+
+        <Surface variant="primary" className="mt-6 space-y-ds-4">
+          <div className="space-y-ds-2">
+            <SectionTitle>{t("personalizationTitle")}</SectionTitle>
+            <MutedText className={ds.typography.proseMax}>{t("personalizationDescription")}</MutedText>
           </div>
           <PersonalizationForm />
         </Surface>
 
         <Surface variant="primary" className="mt-6 space-y-ds-4">
           <div className="space-y-ds-2">
-            <SectionTitle>Automation Settings</SectionTitle>
-            <MutedText className={ds.typography.proseMax}>Turn rules on or off. Stored locally.</MutedText>
+            <SectionTitle>{t("nudgesTitle")}</SectionTitle>
+            <MutedText className={ds.typography.proseMax}>{t("nudgesDescription")}</MutedText>
           </div>
 
           {catalogEmpty ? (
-            <MutedText className="mt-ds-6">No automation rules are configured yet.</MutedText>
+            <MutedText className="mt-ds-6">{t("nudgesEmpty")}</MutedText>
           ) : (
             <div className="mt-ds-5 space-y-ds-6">
               {CATEGORY_ORDER.map((cat) => {
@@ -315,7 +297,7 @@ export default function SettingsPage() {
                 return (
                   <div key={cat}>
                     <LabelText as="p" className="font-semibold text-lifeos-fg-secondary">
-                      {CATEGORY_LABEL[cat]}
+                      {categoryLabel(cat, t)}
                     </LabelText>
                     <Surface as="ul" variant="inset" className="mt-ds-3 !p-0 list-none divide-y divide-lifeos-border-subtle/[0.07] overflow-hidden">
                       {rows.map((s) => (
@@ -331,9 +313,14 @@ export default function SettingsPage() {
                           </div>
                           <div className="flex shrink-0 items-center gap-3 self-end sm:self-center">
                             <span className={cn(ds.typography.caption, "font-medium tabular-nums text-lifeos-accent")}>
-                              {s.enabled ? "On" : "Off"}
+                              {s.enabled ? t("toggleOn") : t("toggleOff")}
                             </span>
-                            <ToggleSwitch enabled={s.enabled} onToggle={() => toggle(s.id, !s.enabled)} />
+                            <ToggleSwitch
+                              enabled={s.enabled}
+                              onToggle={() => toggle(s.id, !s.enabled)}
+                              onLabel={t("toggleOn")}
+                              offLabel={t("toggleOff")}
+                            />
                           </div>
                         </li>
                       ))}
@@ -350,14 +337,14 @@ export default function SettingsPage() {
           className="mt-6 space-y-ds-4 rounded-ds-card bg-lifeos-muted/15 px-ds-5 py-ds-6 shadow-inner md:px-ds-6"
         >
           <div className="space-y-ds-2">
-            <SectionTitle>Developer tools</SectionTitle>
-            <MutedText className={ds.typography.proseMax}>For testing and debugging. Kept off the main dashboard.</MutedText>
+            <SectionTitle>{t("developer.title")}</SectionTitle>
+            <MutedText className={ds.typography.proseMax}>{t("developer.pageDescription")}</MutedText>
           </div>
           <Link
             href="/settings/developer"
             className="mt-ds-2 inline-flex min-h-11 items-center justify-center rounded-ds-button bg-lifeos-muted/40 px-ds-5 text-lifeos-body font-medium text-lifeos-accent shadow-sm transition hover:bg-lifeos-hover hover:text-lifeos-fg"
           >
-            Open developer tools
+            {t("developer.link")}
           </Link>
         </Surface>
       </section>

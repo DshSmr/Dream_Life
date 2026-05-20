@@ -2,6 +2,8 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./styles/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
+  /** Match Dream Life `html[data-theme="dark"]` — not OS `prefers-color-scheme` alone */
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {

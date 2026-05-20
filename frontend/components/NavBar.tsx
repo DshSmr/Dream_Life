@@ -2,23 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu, UserRound, X } from "lucide-react";
 import { PAGE_SHELL_CLASS } from "@/components/layout/constants";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useI18n } from "@/lib/i18n";
+import { PRIMARY_NAV } from "@/lib/i18n/nav";
+import { PRODUCT_NAME } from "@/lib/product";
 import { cn } from "@/lib/utils";
 
-const primaryNav = [
-  { href: "/dashboard/overview", label: "Dashboard", prefix: "/dashboard" as const },
-  { href: "/work/tasks", label: "Work", prefix: "/work" as const },
-  { href: "/life/cleaning", label: "Life", prefix: "/life" as const },
-  { href: "/finance/dashboard", label: "Finance", prefix: "/finance" as const },
-  { href: "/insights/activity", label: "Insights", prefix: "/insights" as const },
-  { href: "/settings", label: "Settings", prefix: "/settings" as const }
-] as const;
-
-function isPrimaryActive(pathname: string, prefix: (typeof primaryNav)[number]["prefix"]): boolean {
+function isPrimaryActive(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
@@ -33,9 +27,15 @@ function primaryNavLinkClass(active: boolean) {
 
 export function NavBar() {
   const pathname = usePathname();
+  const { t, locale } = useI18n();
   const [scrolled, setScrolled] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  const primaryNav = useMemo(
+    () => PRIMARY_NAV.map((link) => ({ ...link, label: t(link.labelKey) })),
+    [t, locale]
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -79,7 +79,7 @@ export function NavBar() {
             <button
               type="button"
               className="fixed inset-0 z-[140] bg-lifeos-nav-overlay backdrop-blur-[2px]"
-              aria-label="Close menu"
+              aria-label={t("nav.closeMenu")}
               tabIndex={-1}
               onClick={() => setMobileNavOpen(false)}
             />
@@ -88,14 +88,14 @@ export function NavBar() {
               className="fixed inset-y-0 right-0 z-[150] flex w-[min(20rem,calc(100vw-1rem))] flex-col border-l border-lifeos-border bg-lifeos-inset shadow-ds-md"
               role="dialog"
               aria-modal="true"
-              aria-label="Site navigation"
+              aria-label={t("nav.aria.primary")}
             >
               <div className="flex shrink-0 items-center justify-between border-b border-lifeos-border px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-                <span className="text-sm font-medium text-lifeos-fg-muted">Menu</span>
+                <span className="text-sm font-medium text-lifeos-fg-muted">{t("nav.menu")}</span>
                 <button
                   type="button"
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-lifeos-border text-lifeos-nav-text transition hover:bg-lifeos-hover"
-                  aria-label="Close menu"
+                  aria-label={t("nav.closeMenu")}
                   onClick={() => setMobileNavOpen(false)}
                 >
                   <X className="size-4" strokeWidth={1.75} />
@@ -134,16 +134,16 @@ export function NavBar() {
       >
         <nav
           className={`${PAGE_SHELL_CLASS} flex items-center gap-2 overflow-visible py-3 sm:gap-4 sm:py-4`}
-          aria-label="Primary"
+          aria-label={t("nav.aria.primary")}
         >
           <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
             <Link
               href="/dashboard/overview"
               className="group shrink-0 rounded-lg py-1 pr-1 outline-none transition focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-page"
-              aria-label="Life OS home"
+              aria-label={`${PRODUCT_NAME} home`}
             >
               <span className="block text-[11px] font-semibold uppercase tracking-[0.22em] text-lifeos-fg transition-colors duration-lifeos-normal ease-lifeos group-hover:text-lifeos-accent">
-                Life OS
+                {PRODUCT_NAME}
               </span>
             </Link>
           </div>
@@ -165,7 +165,7 @@ export function NavBar() {
             <Link
               href="/settings"
               className="hidden min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-transparent text-lifeos-fg-muted outline-none transition hover:bg-lifeos-hover/80 hover:text-lifeos-fg focus-visible:ring-2 focus-visible:ring-focus sm:inline-flex"
-              aria-label="Account and settings"
+              aria-label={t("nav.accountSettings")}
             >
               <UserRound className="size-[1.125rem]" strokeWidth={1.75} />
             </Link>
@@ -174,7 +174,7 @@ export function NavBar() {
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-lifeos-border-subtle/40 bg-transparent text-lifeos-fg-muted transition hover:bg-lifeos-hover md:hidden"
               aria-expanded={mobileNavOpen}
               aria-controls="mobile-nav-drawer"
-              aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+              aria-label={mobileNavOpen ? t("nav.closeMenu") : t("nav.openMenu")}
               onClick={() => setMobileNavOpen((o) => !o)}
             >
               {mobileNavOpen ? (

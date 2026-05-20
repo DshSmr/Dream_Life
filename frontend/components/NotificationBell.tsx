@@ -7,6 +7,7 @@ import { Bell } from "lucide-react";
 import { toast } from "sonner";
 import { sendWithOfflineQueue } from "@/services/offlineQueue";
 import { API_URL, CleaningZone, FocusSession, TaskItem } from "@/lib/api";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { Button } from "@/components/ui/button";
 import { WhyMuted } from "@/components/explainability/WhyLine";
 import { getLocalDayRangeIso } from "@/lib/datetime";
@@ -222,7 +223,7 @@ export function NotificationBell() {
               })
           );
           if (result.mode === "queued") {
-            toast.info("Pending sync", { description: "Saved offline. Syncs when you are online." });
+            toast.info("Saved for now", { description: "Saved on this device. It will sync when you are back online." });
             markRead(n.id);
             await refresh();
             setOpen(false);
@@ -248,7 +249,7 @@ export function NotificationBell() {
             })
           );
           if (result.mode === "queued") {
-            toast.info("Pending sync", { description: "Cleaning logged locally." });
+            toast.info("Saved for now", { description: "Saved on this device until you are back online." });
             markRead(n.id);
             await refresh();
             return;
@@ -333,7 +334,13 @@ export function NotificationBell() {
             {loadError ? (
               <p className={`px-3 py-4 text-sm ${ui.mutedText}`}>Could not load notifications. Check your connection.</p>
             ) : notifications.length === 0 ? (
-              <p className={`px-3 py-4 text-sm ${ui.mutedText}`}>Nothing new right now.</p>
+              <CalmEmptyState
+                tone="notifications"
+                size="inline"
+                className="px-3 py-4"
+                title="Nothing new right now"
+                description="You're all caught up for now."
+              />
             ) : (
               <ul className="divide-y divide-lifeos-border">
                 {notifications.map((n) => (

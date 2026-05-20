@@ -6,8 +6,11 @@ import { formatDateFiNumeric, formatLocalDateTimeLong } from "@/lib/datetime";
 import { ui } from "@/lib/ui";
 import { ds } from "@/styles/design-system";
 import { cn } from "@/lib/utils";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { PageSectionSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/lib/i18n";
+import { buildReviewHistoryDisplay } from "@/lib/reviewHistory/buildReviewHistoryDisplay";
 
 async function errorMessageFromResponse(res: Response): Promise<string> {
   const text = await res.text();
@@ -41,6 +44,9 @@ function ReviewCard({
   onRegenerate: () => void;
   busy: boolean;
 }) {
+  const { t, locale } = useTranslations("insights.reviewHistory");
+  const display = buildReviewHistoryDisplay(review, t, locale);
+
   return (
     <article className={ds.surfaces.contentPanelCompact}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -49,12 +55,15 @@ function ReviewCard({
           onClick={onToggle}
           className="min-w-0 flex-1 text-left"
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-lifeos-fg-muted">
-            {formatDateFiNumeric(review.date)}
-          </p>
-          <h3 className="mt-1 text-lg font-semibold text-lifeos-fg">{review.title}</h3>
+          <h3 className="text-lg font-semibold text-lifeos-fg">{display.title}</h3>
+          <p className={`mt-1 text-sm ${ui.mutedText}`}>{formatDateFiNumeric(review.date)}</p>
+          {display.preview ? (
+            <p className={`mt-2 text-sm leading-relaxed ${ui.mutedText}`}>{display.preview}</p>
+          ) : null}
           {review.created_at && (
-            <p className={`mt-1 text-xs ${ui.mutedText}`}>Saved {formatLocalDateTimeLong(review.created_at)}</p>
+            <p className={`mt-2 text-xs ${ui.mutedText}`}>
+              {t("saved")} {formatLocalDateTimeLong(review.created_at)}
+            </p>
           )}
         </button>
         <Button
@@ -66,7 +75,7 @@ function ReviewCard({
             onRegenerate();
           }}
         >
-          {busy ? "Working…" : "Refresh"}
+          {busy ? t("working") : t("revisit")}
         </Button>
       </div>
 
@@ -75,7 +84,7 @@ function ReviewCard({
           <p className="text-sm leading-relaxed text-lifeos-fg-secondary">{review.summary}</p>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-lifeos-fg-muted">What went well</h4>
+              <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-lifeos-fg-muted">{t("whatWentWell")}</h4>
               <ul className="mt-2 space-y-1.5 text-sm text-lifeos-success">
                 {review.wins.map((w, i) => (
                   <li key={`${review.date}-w-${i}`}>{w}</li>
@@ -83,7 +92,7 @@ function ReviewCard({
               </ul>
             </div>
             <div>
-              <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-lifeos-fg-muted">Needs attention</h4>
+              <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-lifeos-fg-muted">{t("needsAttention")}</h4>
               <ul className="mt-2 space-y-1.5 text-sm text-lifeos-warning">
                 {review.concerns.map((c, i) => (
                   <li key={`${review.date}-c-${i}`}>{c}</li>
@@ -92,7 +101,7 @@ function ReviewCard({
             </div>
           </div>
           <div>
-            <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-lifeos-fg-muted">Tomorrow</h4>
+            <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-lifeos-fg-muted">{t("tomorrow")}</h4>
             <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-lifeos-fg-secondary">
               {review.tomorrowPlan.map((t, i) => (
                 <li key={`${review.date}-t-${i}`}>{t}</li>
@@ -106,6 +115,7 @@ function ReviewCard({
 }
 
 export default function AiReviewHistoryPage() {
+  const { t } = useTranslations("insights.reviewHistory");
   const [items, setItems] = useState<DailyReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -156,10 +166,8 @@ export default function AiReviewHistoryPage() {
   return (
     <div className={ui.contentClass}>
       <section className={ui.panelClass}>
-        <h1 className="text-2xl font-semibold text-lifeos-fg">Review history</h1>
-        <p className={ui.pageHint}>
-          One note per calendar day (server UTC, same range as analytics). Refresh here or from the dashboard.
-        </p>
+        <h1 className="text-2xl font-semibold text-lifeos-fg">{t("pageTitle")}</h1>
+        <p className={ui.pageHint}>{t("pageDescription")}</p>
 
         {error && <p className="mt-4 text-sm text-lifeos-danger">{error}</p>}
         {loading && (
@@ -169,9 +177,13 @@ export default function AiReviewHistoryPage() {
         )}
 
         {!loading && !error && items.length === 0 && (
-          <p className={cn("mt-6", ds.surfaces.toneWell, "text-sm", ui.mutedText)}>
-            No reviews yet. Dashboard → Suggestions → <span className="text-lifeos-fg-secondary">Run review</span>.
-          </p>
+          <CalmEmptyState
+            tone="reviews"
+            size="comfortable"
+            className="mt-6"
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
+          />
         )}
 
         <div className="mt-6 space-y-4">

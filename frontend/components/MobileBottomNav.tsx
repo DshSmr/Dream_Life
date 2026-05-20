@@ -2,27 +2,44 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMemo } from "react";
 import { Home, LayoutDashboard, Lightbulb, ListTodo, Wallet } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
+import { PRIMARY_NAV } from "@/lib/i18n/nav";
 
-const items = [
-  { href: "/dashboard/overview", label: "Dashboard", Icon: LayoutDashboard, prefix: "/dashboard" as const },
-  { href: "/work/tasks", label: "Work", Icon: ListTodo, prefix: "/work" as const },
-  { href: "/life/cleaning", label: "Life", Icon: Home, prefix: "/life" as const },
-  { href: "/finance/dashboard", label: "Finance", Icon: Wallet, prefix: "/finance" as const },
-  { href: "/insights/activity", label: "Insights", Icon: Lightbulb, prefix: "/insights" as const }
-] as const;
+const MOBILE_NAV = PRIMARY_NAV.filter((item) => item.href !== "/settings");
 
-function routeActive(pathname: string, prefix: (typeof items)[number]["prefix"]): boolean {
+const ICONS = {
+  "/dashboard": LayoutDashboard,
+  "/work": ListTodo,
+  "/life": Home,
+  "/finance": Wallet,
+  "/insights": Lightbulb
+} as const;
+
+function routeActive(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
 export function MobileBottomNav() {
   const pathname = usePathname();
+  const { t, locale } = useI18n();
+
+  const items = useMemo(
+    () =>
+      MOBILE_NAV.map((item) => ({
+        href: item.href,
+        label: t(item.labelKey),
+        prefix: item.prefix,
+        Icon: ICONS[item.prefix as keyof typeof ICONS]
+      })),
+    [t, locale]
+  );
 
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-lifeos-border bg-lifeos-page/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
-      aria-label="Primary mobile"
+      aria-label={t("nav.aria.mobilePrimary")}
     >
       <div className="mx-auto grid max-w-7xl grid-cols-5 gap-0.5 px-1 pt-1">
         {items.map(({ href, label, Icon, prefix }) => {

@@ -8,30 +8,60 @@ def build_rule_based_daily_insight(summary: Mapping[str, int | float | str], foc
     balance_delta = float(summary["balance_delta"])
     cleanings_done = int(summary["cleanings_done"])
 
-    if tasks_completed >= 3 and focus_minutes >= 90:
-        headline = "Strong productive day"
-    elif tasks_completed == 0 and focus_minutes < 30:
-        headline = "Light execution day"
-    else:
-        headline = "Steady progress day"
-
-    summary_text = (
-        f"You completed {tasks_completed} tasks, logged {focus_minutes} minutes of focus time, "
-        f"and finished {cleanings_done} cleaning actions. "
-        f"Your financial balance changed by {balance_delta:.2f} today."
+    has_activity = (
+        tasks_completed > 0
+        or cleanings_done > 0
+        or focus_minutes >= 15
+        or balance_delta != 0
     )
+
+    if not has_activity:
+        headline = "A calm day"
+        summary_text = "Things felt relatively calm today."
+    else:
+        headline = "Small steps today"
+        reflection_parts: list[str] = []
+        if tasks_completed > 0 and cleanings_done > 0:
+            reflection_parts.append(
+                "You moved through a few small tasks today and kept home routines going."
+            )
+        elif tasks_completed > 0:
+            reflection_parts.append("You moved through a few small tasks today.")
+        elif cleanings_done > 0:
+            reflection_parts.append("Home routines had some gentle attention today.")
+        elif focus_minutes >= 15:
+            reflection_parts.append("There was room for quiet focus today.")
+        else:
+            reflection_parts.append("Today unfolded gently, one small moment at a time.")
+
+        detail_parts: list[str] = []
+        if tasks_completed > 0:
+            detail_parts.append(
+                f"{tasks_completed} task{'s' if tasks_completed != 1 else ''} completed"
+            )
+        if focus_minutes >= 15:
+            detail_parts.append(f"{focus_minutes} min of focus")
+        if cleanings_done > 0:
+            detail_parts.append(
+                f"{cleanings_done} home care moment{'s' if cleanings_done != 1 else ''}"
+            )
+        summary_text = reflection_parts[0]
+        if detail_parts:
+            summary_text = f"{summary_text} {' · '.join(detail_parts)}"
 
     recommendations: list[str] = []
     if focus_minutes < 60:
-        recommendations.append("Schedule one 25-minute focus block for your top task tomorrow.")
+        recommendations.append(
+            "If tomorrow feels open, a short focus block can be enough."
+        )
     if tasks_completed == 0:
-        recommendations.append("Start the day by finishing one small task to build momentum.")
+        recommendations.append("One small task tomorrow can help the day feel lighter.")
     if cleanings_done == 0:
-        recommendations.append("Mark one cleaning zone as done to keep home maintenance consistent.")
+        recommendations.append("A single home care moment can keep the rhythm gentle.")
     if balance_delta < 0:
-        recommendations.append("Review expenses and set a spending limit for one category tomorrow.")
+        recommendations.append("A quiet look at spending tomorrow may feel grounding.")
     if not recommendations:
-        recommendations.append("Keep the same routine and repeat your current workflow tomorrow.")
+        recommendations.append("The same gentle rhythm can carry into tomorrow.")
 
     return {
         "date": str(summary["date"]),
@@ -59,7 +89,9 @@ def build_openai_daily_insight(
             {
                 "role": "system",
                 "content": (
-                    "You are a concise personal productivity assistant. "
+                    "You are a calm, reflective life companion (Dream Life tone). "
+                    "Write emotionally safe, non-judgmental copy. Reflection first; numbers second if needed. "
+                    "Avoid productivity scoring, urgency, or analytics jargon. "
                     "Return strict JSON with keys: headline (string), summary (string), recommendations (array of 1-4 strings)."
                 ),
             },

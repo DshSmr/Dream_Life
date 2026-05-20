@@ -33,13 +33,22 @@ def _normalize_review_payload(raw: dict[str, Any], date_str: str) -> dict[str, A
 def build_rule_based_daily_review(context: dict[str, Any]) -> dict[str, Any]:
     ds = context["dailyStats"]
     date_str = context["date"]
-    title = f"Daily review — {date_str}"
-    summary = (
-        f"Logged activity for {date_str}: {ds['tasksCompleted']} tasks completed, "
-        f"{ds['focusMinutes']} minutes of focus-related events, {ds['cleaningActions']} cleaning actions, "
-        f"€{ds['expensesTotal']:.2f} in expense events. "
-        f"Month-to-date balance delta from transactions: €{context['financeMonth']['balance_delta']:.2f}."
-    )
+    title = f"A gentle look at {date_str}"
+    tasks = int(ds["tasksCompleted"])
+    focus = int(ds["focusMinutes"])
+    cleaning = int(ds["cleaningActions"])
+    if tasks > 0 and cleaning > 0:
+        summary = "A steady day with a little work and care for home."
+    elif focus > 0 and cleaning > 0:
+        summary = "Focus and home care shared the day in a calm rhythm."
+    elif tasks > 0:
+        summary = "A quieter day with a few things completed."
+    elif focus > 0:
+        summary = "There was room for quiet focus today."
+    elif cleaning > 0:
+        summary = "Home had some gentle attention."
+    else:
+        summary = "A soft day — small moments still matter when they arrive."
     wins: list[str] = []
     if ds["tasksCompleted"] >= 3:
         wins.append("You closed several tasks — momentum on execution.")

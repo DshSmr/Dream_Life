@@ -7,5 +7,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   dailySpendingLimit: HIGH_SPENDING_EUR_THRESHOLD,
   defaultCleaningFrequencyDays: 7,
   workdayStart: "09:00",
-  workdayEnd: "18:00"
+  workdayEnd: "18:00",
+  currentDreamId: "",
+  currentDreamCustom: ""
 };

@@ -1,3 +1,18 @@
-export { buildDailyTimeline } from "@/lib/timeline/buildDailyTimeline";
-export { mapEventToTimelineCopy, TIMELINE_EVENT_HEADLINE } from "@/lib/timeline/eventLabels";
-export type { TimelineRow } from "@/lib/timeline/types";
+export { buildDailyTimeline, buildLifeFlowStream } from "@/lib/timeline/buildLifeFlowStream";
+export type { BuildLifeFlowInput } from "@/lib/timeline/buildLifeFlowStream";
+export {
+  createLifeFlowT,
+  mapEventToTimelineCopy,
+  mapEventToLifeFlowCopy,
+  type LifeFlowT
+} from "@/lib/timeline/lifeFlowCopy";
+export { shouldIncludeEventInLifeFlow } from "@/lib/timeline/flowNoise";
+export type {
+  LifeFlowCategory,
+  LifeFlowDayBucket,
+  LifeFlowDayGroup,
+  LifeFlowDayPartGroup,
+  LifeFlowMoment,
+  TimelineRow
+} from "@/lib/timeline/types";
+export { dayBucketForKey, formatDayHeading } from "@/lib/timeline/synthesis";

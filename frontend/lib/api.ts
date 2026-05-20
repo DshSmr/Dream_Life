@@ -31,12 +31,7 @@ export function describeFetchFailure(reason: unknown): string {
     raw === "Load failed" ||
     raw === "The Internet connection appears to be offline."
   ) {
-    return (
-      `Cannot reach the Life OS API at ${API_URL}. ` +
-      `Start the backend (from the backend folder): python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8765. ` +
-      `The UI uses a Next.js proxy (/life-os-api → port 8765) unless NEXT_PUBLIC_API_URL is set. ` +
-      `Restart Next.js after changing env.`
-    );
+    return "We could not reach Dream Life. Check your connection and try again.";
   }
   return raw;
 }
@@ -55,8 +50,7 @@ export async function errorFromResponse(response: Response, label: string): Prom
     /OperationalError|connection refused|could not connect|Connection refused/i.test(msg) ||
     (response.status >= 500 && /postgres|psycopg|5432|5433/i.test(msg))
   ) {
-    msg +=
-      " — Backend database unreachable. Start Postgres (e.g. `docker compose up -d db` from the repo root) or fix DATABASE_URL.";
+    msg = "Something went wrong loading your data. Try again in a moment.";
   }
   return new Error(msg);
 }
@@ -273,6 +267,28 @@ export async function fetchDetectedHabits(days = 45, baseUrl: string = API_URL):
     throw new Error(t || `Detected habits failed (${res.status})`);
   }
   return res.json() as Promise<DetectedHabit[]>;
+}
+
+export type ClearAppHistoryResult = {
+  ok: boolean;
+  cleared: Record<string, number>;
+  message: string;
+};
+
+export async function clearAppHistory(baseUrl: string = API_URL): Promise<ClearAppHistoryResult> {
+  const res = await fetch(`${baseUrl}/app/clear-history`, { method: "POST" });
+  if (!res.ok) {
+    throw await errorFromResponse(res, "Could not clear history");
+  }
+  return (await res.json()) as ClearAppHistoryResult;
+}
+
+export async function resetAllAppData(baseUrl: string = API_URL): Promise<ClearAppHistoryResult> {
+  const res = await fetch(`${baseUrl}/app/reset-all-data`, { method: "POST" });
+  if (!res.ok) {
+    throw await errorFromResponse(res, "Could not reset data");
+  }
+  return (await res.json()) as ClearAppHistoryResult;
 }
 
 export async function postRecommendationFeedback(

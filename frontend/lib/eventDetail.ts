@@ -8,7 +8,7 @@ export function formatEventTypeTitle(type: EventType | string): string {
     .join(" ");
 }
 
-/** Product / domain area for Activity detail UI. */
+/** Product / domain area for Activity detail UI (internal key). */
 export function eventTypeToModule(type: EventType): string {
   switch (type) {
     case "task_completed":
@@ -27,6 +27,15 @@ export function eventTypeToModule(type: EventType): string {
     default:
       return "other";
   }
+}
+
+/** User-facing area label for activity detail UI. */
+export function eventModuleLabel(module: string): string {
+  if (module === "productivity") return "Work";
+  if (module === "finance") return "Finance";
+  if (module === "home") return "Home";
+  if (module === "manual") return "You";
+  return "Other";
 }
 
 export function isEventPayloadEmpty(payload: Record<string, unknown>): boolean {

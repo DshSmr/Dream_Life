@@ -25,11 +25,11 @@ export function OfflineQueueIndicator() {
           ? "border-lifeos-warning-muted/80 bg-lifeos-warning-muted text-lifeos-warning"
           : "border-lifeos-status-neutral-border/70 bg-lifeos-status-neutral-bg text-lifeos-status-neutral"
       }`}
-      title={syncing ? "Sending queued actions to the server" : `${count} action(s) waiting for the API`}
+      title={syncing ? "Sending saved changes" : `${count} change${count === 1 ? "" : "s"} waiting to sync`}
     >
-      {syncing ? <span className="text-lifeos-warning">Syncing…</span> : <span>Pending sync ({count})</span>}
+      {syncing ? <span className="text-lifeos-warning">Syncing…</span> : <span>Waiting to sync ({count})</span>}
       <span className={`mt-0.5 block text-[10px] font-normal ${ui.mutedText}`}>
-        {syncing ? "Uploading offline queue" : "Will retry automatically"}
+        {syncing ? "Almost done" : "Will try again when you are online"}
       </span>
     </div>
   );

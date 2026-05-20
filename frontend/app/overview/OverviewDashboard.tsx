@@ -19,11 +19,11 @@ import {
   TaskItem
 } from "@/lib/api";
 import { cleaningActionLabel, formatSignedEur, pickNextCleaningZone, pickTopPriorityTask } from "@/lib/commandCenter";
+import { signedDeltaValueClass } from "@/lib/semanticTone";
 import { computeDailyStats, countEventsOnLocalDay } from "@/lib/analytics/fromEvents";
 import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
 import {
   formatDateFiNumeric,
-  formatDateTimeFiNumeric,
   getLocalDayRangeIso,
   getLocalLastNDaysRangeIso,
   getLocalMonthRangeIso,
@@ -43,6 +43,13 @@ import { useAutomationPrefsEpoch } from "@/hooks/useAutomationPrefsEpoch";
 import { useUserPreferencesEpoch } from "@/hooks/useUserPreferencesEpoch";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CurrentDreamStrip } from "@/components/dream/CurrentDreamStrip";
+import { pickDreamWhisper, pickNextStepDreamNote, resolveDreamFromPreferences } from "@/lib/dream";
+import type { DreamLayerContext } from "@/lib/dream";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
+import { useTranslations } from "@/lib/i18n";
+import type { TranslationKey } from "@/lib/i18n/types";
+import { getResolvedUserPreferences } from "@/services/preferences";
 import { Card } from "@/components/ui/card";
 import { PageSectionSkeleton } from "@/components/ui/skeleton";
 import {
@@ -57,52 +64,14 @@ import { fetchGoalsForPeriod } from "@/lib/goals/api";
 import type { Goal } from "@/lib/goals/types";
 import { runRecommendationsAutomation, type NextActionRecommendation } from "@/lib/recommendations";
 import { clearRecommendationCooldown, touchRecommendationCooldown } from "@/lib/recommendations/adaptiveApply";
-import { computeTodayState, type SystemStatusTone, type TodayStateRow } from "@/lib/systemStatus";
+import { buildCurrentState } from "@/lib/currentState";
+import { CurrentStatePanel } from "@/components/dashboard/CurrentStatePanel";
+import { PatternsAtAGlance } from "@/components/analytics/PatternsAtAGlance";
+import { buildPatternAnalytics } from "@/lib/analytics/visual";
 import { sendWithOfflineQueue } from "@/services/offlineQueue";
 import { useLifeOsRealtimeEpoch } from "@/services/realtime";
-import { Brain, Home, ListTodo, Sparkles, Wallet, Zap } from "lucide-react";
+import { ListTodo, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-
-function systemStatusToneStyles(tone: SystemStatusTone): { shell: string; badge: string; glow: string } {
-  switch (tone) {
-    case "positive":
-      return {
-        shell:
-          "rounded-ds-input bg-lifeos-inset/90 shadow-inner ring-1 ring-lifeos-status-healthy-border/45",
-        badge: "rounded-md bg-lifeos-success-muted/25 px-ds-2 py-0.5 text-xs font-medium text-lifeos-success",
-        glow: "text-lifeos-success"
-      };
-    case "caution":
-      return {
-        shell:
-          "rounded-ds-input bg-lifeos-inset/90 shadow-inner ring-1 ring-lifeos-warning/35",
-        badge: "rounded-md bg-lifeos-warning-muted/25 px-ds-2 py-0.5 text-xs font-medium text-lifeos-warning",
-        glow: "text-lifeos-warning"
-      };
-    case "critical":
-      return {
-        shell:
-          "rounded-ds-input bg-lifeos-danger-muted/15 shadow-inner ring-1 ring-lifeos-status-risk-border/50",
-        badge: "rounded-md bg-lifeos-danger-muted/30 px-ds-2 py-0.5 text-xs font-medium text-lifeos-danger",
-        glow: "text-lifeos-danger"
-      };
-    default:
-      return {
-        shell:
-          "rounded-ds-input bg-lifeos-inset/75 shadow-inner ring-1 ring-lifeos-domain-ai-border/55",
-        badge: "rounded-md bg-lifeos-muted px-ds-2 py-0.5 text-xs font-medium text-lifeos-fg-secondary",
-        glow: "text-lifeos-fg-muted"
-      };
-  }
-}
-
-function TodayStateIcon({ rowKey }: { rowKey: TodayStateRow["key"] }) {
-  const cls = "size-4 shrink-0 opacity-90";
-  if (rowKey === "mind") return <Brain className={cls} strokeWidth={1.75} />;
-  if (rowKey === "home") return <Home className={cls} strokeWidth={1.75} />;
-  if (rowKey === "finance") return <Wallet className={cls} strokeWidth={1.75} />;
-  return <Zap className={cls} strokeWidth={1.75} />;
-}
 
 function riskSeverityShell(severity: RiskSignal["severity"]): string {
   if (severity === "high") {
@@ -114,15 +83,22 @@ function riskSeverityShell(severity: RiskSignal["severity"]): string {
   return "rounded-ds-input bg-lifeos-inset/80 shadow-inner";
 }
 
-function riskSeverityLabel(severity: RiskSignal["severity"]): string {
-  if (severity === "high") return "High";
-  if (severity === "medium") return "Medium";
-  return "Low";
-}
-
 export type DashboardTabId = "overview" | "command-center" | "daily-plan" | "recommendations" | "notifications";
 
 export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
+  const { t, locale } = useTranslations();
+  const { t: tOverview } = useTranslations("dashboard.overview");
+  const { t: tCmd } = useTranslations("dashboard.commandCenter");
+  const { t: tPlan } = useTranslations("dashboard.dailyPlan");
+  const { t: tRec } = useTranslations("dashboard.recommendations");
+  const { t: tSev } = useTranslations("dashboard.severity");
+
+  function riskSeverityLabel(severity: RiskSignal["severity"]): string {
+    if (severity === "high") return tSev("high");
+    if (severity === "medium") return tSev("medium");
+    return tSev("low");
+  }
+
   const automationPrefsEpoch = useAutomationPrefsEpoch();
   const userPrefsEpoch = useUserPreferencesEpoch();
   const router = useRouter();
@@ -343,15 +319,15 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
         })
       );
       if (result.mode === "queued") {
-        toast.info("Pending sync", { description: "Saved offline. Syncs when you are online." });
+        toast.info(t("common.toast.savedForNow"), { description: t("common.toast.savedOffline") });
         return;
       }
       if (!result.response.ok) {
-        setError("Failed to start focus session");
-        toast.error("Failed to start focus session");
+        setError(t("common.toast.focusStartFailed"));
+        toast.error(t("common.toast.focusStartFailed"));
         return;
       }
-      toast.success("Focus session started");
+      toast.success(t("common.toast.focusStarted"));
       router.push("/work/focus");
     } catch (e: unknown) {
       const msg = describeFetchFailure(e);
@@ -370,23 +346,6 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
 
   const topTask = pickTopPriorityTask(commandTasks);
   const nextZone = pickNextCleaningZone(commandZones);
-  const todayStateRows = useMemo(
-    () =>
-      computeTodayState({
-        tasksCompletedToday: dailyStatsFromEvents.tasksCompleted,
-        focusSessions,
-        cleaningZones: commandZones,
-        monthlyBalanceDelta: financeMonth?.balance_delta ?? null,
-        focusMinutesToday: dailyStatsFromEvents.focusMinutes
-      }),
-    [
-      dailyStatsFromEvents.tasksCompleted,
-      dailyStatsFromEvents.focusMinutes,
-      focusSessions,
-      commandZones,
-      financeMonth?.balance_delta
-    ]
-  );
 
   const recommendationAutomation = useMemo(() => {
     const now = new Date();
@@ -442,6 +401,72 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
 
   const primaryNextAction = nextActions[0] ?? null;
   const overviewDailyPlanItems = useMemo(() => dailyPlanItems.slice(0, 5), [dailyPlanItems]);
+
+  const currentDream = useMemo(
+    () => resolveDreamFromPreferences(getResolvedUserPreferences()),
+    [userPrefsEpoch]
+  );
+
+  const patternSnapshot = useMemo(() => buildPatternAnalytics(events, 14), [events]);
+
+  const currentStateSnapshot = useMemo(
+    () =>
+      buildCurrentState(
+        {
+          tasksCompletedToday: dailyStatsFromEvents.tasksCompleted,
+          focusMinutesToday: dailyStatsFromEvents.focusMinutes,
+          cleaningActionsToday: dailyStatsFromEvents.cleaningActions,
+          focusSessions,
+          cleaningZones: commandZones,
+          expensesTodayTotal:
+            financeToday?.expense_total ?? dailyStatsFromEvents.expensesTotal,
+          dailySpendingLimitEur: getResolvedUserPreferences().dailySpendingLimit,
+          monthlyBalanceDelta: financeMonth?.balance_delta ?? null,
+          dream: currentDream
+        },
+        (key) => t(key as TranslationKey)
+      ),
+    [
+      dailyStatsFromEvents.tasksCompleted,
+      dailyStatsFromEvents.focusMinutes,
+      dailyStatsFromEvents.cleaningActions,
+      dailyStatsFromEvents.expensesTotal,
+      focusSessions,
+      commandZones,
+      financeToday?.expense_total,
+      financeMonth?.balance_delta,
+      userPrefsEpoch,
+      currentDream,
+      locale,
+      t
+    ]
+  );
+
+  const dreamLayerContext = useMemo((): DreamLayerContext => {
+    const done = overviewDailyPlanItems.filter((i) => i.completed).length;
+    return {
+      tasksCompletedToday: dailyStatsFromEvents.tasksCompleted,
+      focusMinutesToday: dailyStatsFromEvents.focusMinutes,
+      hasNextAction: primaryNextAction != null,
+      planItemsDone: done,
+      planItemsTotal: overviewDailyPlanItems.length
+    };
+  }, [
+    dailyStatsFromEvents.tasksCompleted,
+    dailyStatsFromEvents.focusMinutes,
+    primaryNextAction,
+    overviewDailyPlanItems
+  ]);
+
+  const dreamWhisper = useMemo(
+    () => pickDreamWhisper(currentDream, dreamLayerContext),
+    [currentDream, dreamLayerContext]
+  );
+
+  const nextStepDreamNote = useMemo(
+    () => pickNextStepDreamNote(currentDream, dreamLayerContext),
+    [currentDream, dreamLayerContext]
+  );
   const importantRiskSignals = useMemo(
     () => riskSignals.filter((r) => r.severity === "high" || r.severity === "medium"),
     [riskSignals]
@@ -472,13 +497,13 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
           })
         );
         if (result.mode === "queued") {
-          toast.info("Pending sync", { description: "Saved offline. Syncs when you are online." });
+          toast.info(t("common.toast.savedForNow"), { description: t("common.toast.savedOffline") });
           await submitRecFeedback(item.id, "accepted");
           await refreshRecommendationDrivers();
           return;
         }
         if (!result.response.ok) throw new Error("Failed to mark cleaning as done");
-        toast.success("Marked as cleaned");
+        toast.success(t("common.toast.markedCleaned"));
         await submitRecFeedback(item.id, "accepted");
         await refreshRecommendationDrivers();
       } else if (pa.kind === "focus_start") {
@@ -492,13 +517,13 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
             })
         );
         if (result.mode === "queued") {
-          toast.info("Pending sync", { description: "Saved offline. Syncs when you are online." });
+          toast.info(t("common.toast.savedForNow"), { description: t("common.toast.savedOffline") });
           await submitRecFeedback(item.id, "accepted");
           await refreshRecommendationDrivers();
           return;
         }
         if (!result.response.ok) throw new Error("Failed to start focus session");
-        toast.success("Focus session started");
+        toast.success(t("common.toast.focusStarted"));
         await submitRecFeedback(item.id, "accepted");
         await refreshRecommendationDrivers();
         router.push("/work/focus");
@@ -512,31 +537,11 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
         await refreshRecommendationDrivers();
       }
     } catch (e: unknown) {
-      toast.error("Action failed");
+      toast.error(t("common.toast.actionFailed"));
       setError(describeFetchFailure(e));
     } finally {
       setRecActionBusy(null);
     }
-  }
-
-  function nextActionCategoryLabel(category: NextActionRecommendation["type"]): string {
-    if (category === "productivity") return "Productivity";
-    if (category === "cleaning") return "Cleaning";
-    if (category === "finance") return "Finance";
-    return "Tasks";
-  }
-
-  function dailyPlanCategoryLabel(category: DailyPlanItem["category"]): string {
-    if (category === "task") return "Task";
-    if (category === "focus") return "Focus";
-    if (category === "cleaning") return "Cleaning";
-    return "Finance";
-  }
-
-  function nextActionPriorityClass(p: NextActionRecommendation["priority"]): string {
-    if (p === "high") return "bg-lifeos-danger-muted/22 text-lifeos-danger shadow-sm";
-    if (p === "medium") return "bg-lifeos-warning-muted/18 text-lifeos-warning shadow-sm";
-    return "bg-lifeos-muted/70 text-lifeos-fg-muted shadow-sm";
   }
 
   return (
@@ -548,78 +553,93 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <section className={ds.surfaces.contentPanel}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">Command Center</h2>
-            <p className={`mt-1 text-sm ${ui.mutedText}`}>What matters most today</p>
+            <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">{tCmd("title")}</h2>
+            <p className={`mt-1 text-sm ${ui.mutedText}`}>{tCmd("subtitle")}</p>
+            {currentDream.isSet && dreamWhisper ? (
+              <p className={`mt-ds-2 max-w-[52ch] text-sm ${ui.mutedText}`}>{dreamWhisper}</p>
+            ) : null}
           </div>
         </div>
 
         <div className={cn(ds.surfaces.metricBand, "mt-ds-4")}>
           <div className="grid grid-cols-1 gap-ds-4 lg:grid-cols-3">
             <div className="min-w-0 space-y-ds-2">
-              <p className="text-lifeos-caption font-medium text-lifeos-accent">Priority task</p>
+              <p className="text-lifeos-caption font-medium text-lifeos-accent">{tCmd("priorityTask")}</p>
               {topTask ? (
                 <div className="space-y-ds-2">
                   <p className="text-lg font-medium text-lifeos-fg">{topTask.title}</p>
                   <p className={`text-sm ${ui.mutedText}`}>
-                    High priority
-                    {topTask.due_date ? ` · Due ${formatDateFiNumeric(topTask.due_date)}` : ""}
+                    {tCmd("important")}
+                    {topTask.due_date ? ` · ${tCmd("due")} ${formatDateFiNumeric(topTask.due_date)}` : ""}
                   </p>
                   <Link href="/work/tasks" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}>
-                    Open tasks
+                    {tCmd("seeTasks")}
                   </Link>
                 </div>
               ) : (
                 <div className="space-y-ds-2">
-                  <p className="text-lg font-medium text-lifeos-fg">No priority task yet</p>
-                  <p className={`text-sm ${ui.mutedText}`}>Add a task and mark it high priority.</p>
+                  <p className="text-lg font-medium text-lifeos-fg">{tCmd("nothingPressing")}</p>
+                  <p className={`text-sm ${ui.mutedText}`}>{tCmd("addTaskHint")}</p>
                   <Link href="/work/tasks" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}>
-                    Add a high-priority task
+                    {tCmd("addImportantTask")}
                   </Link>
                 </div>
               )}
             </div>
 
             <div className="min-w-0 space-y-ds-2">
-              <p className="text-lifeos-caption font-medium text-lifeos-accent">Cleaning</p>
+              <p className="text-lifeos-caption font-medium text-lifeos-accent">{tCmd("home")}</p>
               {nextZone ? (
                 <div className="space-y-ds-2">
-                  <p className="text-lg font-medium text-lifeos-fg">{cleaningActionLabel(nextZone)}</p>
-                  <p className={`text-sm ${ui.mutedText}`}>Every {nextZone.frequency_days} days</p>
+                  <p className="text-lg font-medium text-lifeos-fg">
+                    {cleaningActionLabel(nextZone, (key, values) => tCmd(key, values))}
+                  </p>
+                  <p className={`text-sm ${ui.mutedText}`}>{tCmd("everyDays", { days: nextZone.frequency_days })}</p>
                   <Link href="/life/cleaning" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}>
-                    Open cleaning
+                    {tCmd("seeCleaning")}
                   </Link>
                 </div>
               ) : (
                 <div className="space-y-ds-2">
-                  <p className="text-lg font-medium text-lifeos-fg">No cleaning zones yet</p>
-                  <p className={`text-sm ${ui.mutedText}`}>Add zones to see them here.</p>
+                  <p className="text-lg font-medium text-lifeos-fg">{tCmd("noZones")}</p>
+                  <p className={`text-sm ${ui.mutedText}`}>{tCmd("addZonesHint")}</p>
                   <Link href="/life/cleaning" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}>
-                    Add a zone
+                    {tCmd("addArea")}
                   </Link>
                 </div>
               )}
             </div>
 
             <div className={cn("min-w-0 space-y-ds-2", domain.finance, "rounded-ds-input p-ds-3")}>
-              <p className="text-lifeos-caption font-medium text-lifeos-success">Finances</p>
+              <p className="text-lifeos-caption font-medium text-lifeos-success">{tCmd("money")}</p>
               <div className="space-y-ds-3">
                 <div>
-                  <p className={`text-sm ${ui.mutedText}`}>Today balance</p>
-                  <p className="mt-0.5 text-xl font-semibold tabular-nums text-lifeos-fg">
+                  <p className={`text-sm ${ui.mutedText}`}>{tCmd("today")}</p>
+                  <p
+                    className={cn(
+                      "mt-0.5 text-xl font-semibold tabular-nums text-lifeos-fg",
+                      financeToday ? signedDeltaValueClass(financeToday.balance_delta) : undefined
+                    )}
+                  >
                     {financeToday ? formatSignedEur(financeToday.balance_delta) : "-"}
                   </p>
                 </div>
                 <div>
-                  <p className={`text-sm ${ui.mutedText}`}>Monthly balance</p>
-                  <p className="mt-0.5 text-xl font-semibold tabular-nums text-lifeos-fg">
+                  <p className={`text-sm ${ui.mutedText}`}>{tCmd("thisMonth")}</p>
+                  <p
+                    className={cn(
+                      "mt-0.5 text-xl font-semibold tabular-nums text-lifeos-fg",
+                      financeMonth ? signedDeltaValueClass(financeMonth.balance_delta) : undefined
+                    )}
+                  >
                     {financeMonth ? formatSignedEur(financeMonth.balance_delta) : "-"}
                   </p>
                 </div>
                 <p className={`text-xs ${ui.mutedText}`}>
-                  Full-month totals from the server (all transactions in your local calendar day/month).
+                  {tCmd("monthFootnote")}
                 </p>
                 <Link href="/finance/dashboard" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}>
-                  Open finance
+                  {tCmd("seeFinances")}
                 </Link>
               </div>
             </div>
@@ -632,8 +652,8 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <section className={ds.surfaces.contentPanelCompact}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">Today</h2>
-            <p className={`mt-1 text-sm ${ui.mutedText}`}>A short checklist from your day.</p>
+            <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">{tPlan("title")}</h2>
+            <p className={`mt-1 text-sm ${ui.mutedText}`}>{tPlan("subtitle")}</p>
           </div>
         </div>
 
@@ -662,29 +682,19 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                     >
                       {item.title}
                     </span>
-                    <span className="mt-2 flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${nextActionPriorityClass(item.priority)}`}
-                      >
-                        {item.priority}
-                      </span>
-                      <span className="rounded-md bg-lifeos-muted/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lifeos-accent shadow-sm">
-                        {dailyPlanCategoryLabel(item.category)}
-                      </span>
-                    </span>
                   </span>
                 </label>
               </li>
             ))}
           </ul>
         ) : (
-          <div className={cn("mt-4 flex gap-3 sm:items-center", ds.surfaces.toneWell)}>
-            <ListTodo className="size-4 shrink-0 text-lifeos-fg-muted" strokeWidth={1.75} aria-hidden />
-            <p className={`text-sm ${ui.mutedText}`}>
-              <span className="font-medium text-lifeos-fg-secondary">Nothing here yet.</span> Add a task, spending, or a cleaning zone.
-              The list updates as you go.
-            </p>
-          </div>
+          <CalmEmptyState
+            tone="tasks"
+            size="comfortable"
+            className="mt-4"
+            title={tPlan("emptyTitle")}
+            description={tPlan("emptyDescription")}
+          />
         )}
       </section>
       ) : null}
@@ -693,12 +703,12 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <>
       {automationPositiveInsights.length > 0 ? (
         <section className="mb-4 rounded-ds-card bg-lifeos-status-healthy-bg p-5 shadow-surface-secondary md:p-6">
-          <h2 className="text-lifeos-card-title font-semibold tracking-tight text-lifeos-status-healthy">On track</h2>
+          <h2 className="text-lifeos-card-title font-semibold tracking-tight text-lifeos-status-healthy">{tRec("smallWins")}</h2>
           <ul className="mt-3 space-y-2">
             {automationPositiveInsights.map((insight, i) => (
               <li key={`insight-${i}`} className="text-sm leading-relaxed text-lifeos-fg">
                 <p>{insight.message}</p>
-                <WhyLine text={insight.explanation} />
+                <WhyLine text={insight.explanation} prefix={false} />
               </li>
             ))}
           </ul>
@@ -707,8 +717,8 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
 
       {automationRiskSignals.length > 0 ? (
         <section className={cn("mb-4", ds.surfaces.contentPanelCompact)}>
-          <h2 className="text-lifeos-card-title font-semibold tracking-tight text-lifeos-fg">Goals behind</h2>
-          <p className={`mt-1 text-sm ${ui.mutedText}`}>When weekly or monthly goals slip.</p>
+          <h2 className="text-lifeos-card-title font-semibold tracking-tight text-lifeos-fg">{tRec("goalsNeedCare")}</h2>
+          <p className={`mt-1 text-sm ${ui.mutedText}`}>{tRec("goalsNeedCareHint")}</p>
           <ul className="mt-4 space-y-2">
             {automationRiskSignals.map((sig) => (
               <li
@@ -717,14 +727,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span>{sig.message}</span>
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-lifeos-fg-muted">
-                    {riskSeverityLabel(sig.severity)}
-                  </span>
+                  <span className="text-xs font-medium text-lifeos-fg-muted">{riskSeverityLabel(sig.severity)}</span>
                 </div>
-                <WhyLine text={sig.explanation} />
-                <p className={`mt-1 text-xs tabular-nums ${ui.mutedText}`} suppressHydrationWarning>
-                  {formatDateTimeFiNumeric(sig.detectedAt)}
-                </p>
+                <WhyLine text={sig.explanation} prefix={false} />
               </li>
             ))}
           </ul>
@@ -734,8 +739,8 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <section className={ds.surfaces.contentPanelCompact}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">Next steps</h2>
-            <p className={`mt-1 text-sm ${ui.mutedText}`}>Based on what you&apos;ve logged.</p>
+            <h2 className="text-lifeos-section font-semibold tracking-tight text-lifeos-fg">{tRec("nextSteps")}</h2>
+            <p className={`mt-1 text-sm ${ui.mutedText}`}>{tRec("nextStepsHint")}</p>
           </div>
         </div>
 
@@ -746,10 +751,6 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                 <RecommendationActionCard
                   action={action}
                   busy={recActionBusy === action.id}
-                  mutedTextClass={ui.mutedText}
-                  formatDateTimeFiNumeric={formatDateTimeFiNumeric}
-                  nextActionCategoryLabel={nextActionCategoryLabel}
-                  nextActionPriorityClass={nextActionPriorityClass}
                   onDismiss={() => void submitRecFeedback(action.id, "dismissed")}
                   onImplicitIgnore={() => void submitRecFeedback(action.id, "ignored")}
                   onPrimary={() => runRecommendationPrimaryAction(action)}
@@ -758,11 +759,13 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
             ))}
           </ul>
         ) : (
-          <div className={cn("mt-4", ds.surfaces.toneWell)}>
-            <p className={`text-sm ${ui.mutedText}`}>
-              <span className="font-medium text-lifeos-fg-secondary">Nothing urgent.</span> You&apos;re in range. Check back later.
-            </p>
-          </div>
+          <CalmEmptyState
+            tone="calm"
+            size="comfortable"
+            className="mt-4"
+            title={tRec("emptyTitle")}
+            description={tRec("emptyDescription")}
+          />
         )}
       </section>
 
@@ -770,32 +773,32 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
         <div className={cn("rounded-ds-card bg-lifeos-elevated p-ds-6 shadow-surface-secondary md:p-ds-7", domain.ai)}>
           <div className="flex flex-col gap-ds-6 md:flex-row md:items-center md:justify-between md:gap-ds-8">
             <div className="min-w-0">
-              <h2 className="mt-ds-3 text-lifeos-card-title font-semibold tracking-tight text-lifeos-fg">Today&apos;s review</h2>
-              <p className="mt-4 text-sm leading-relaxed text-lifeos-fg-muted">One note per day. Older days live in History.</p>
+              <h2 className="mt-ds-3 text-lifeos-card-title font-semibold tracking-tight text-lifeos-fg">{tRec("todaysReview")}</h2>
+              <p className="mt-4 text-sm leading-relaxed text-lifeos-fg-muted">{tRec("reviewHint")}</p>
             </div>
             <Link
               href="/insights/ai-reviews"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "inline-flex shrink-0 md:self-center")}
             >
-              History
+              {tRec("history")}
             </Link>
           </div>
 
           {dailyReviewError && (
             <p className="mt-4 rounded-ds-card bg-lifeos-danger-muted/22 px-3 py-2 text-sm text-lifeos-danger shadow-inner">
-              {dailyReviewError}. Retry when you are online.
+              {dailyReviewError}. {tRec("retryOffline")}
             </p>
           )}
 
           {dailyReview?.from_storage && !dailyReviewError && (
             <p className="mt-4 rounded-lg bg-lifeos-muted/80 px-3 py-2 text-sm text-lifeos-fg-secondary">
-              Saved for today. Run again to refresh.
+              {tRec("savedForToday")}
             </p>
           )}
 
           {dailyReview?.fallback && !dailyReviewError && (
             <p className="mt-4 rounded-lg bg-lifeos-warning-muted/15 px-3 py-2 text-sm text-lifeos-warning">
-              Using a simple on-device version for now.
+              {tRec("fallbackDevice")}
             </p>
           )}
 
@@ -818,14 +821,14 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                     onClick={() => void generateDailyReview(true)}
                     type="button"
                   >
-                    Refresh
+                    {tRec("refresh")}
                   </Button>
                 </div>
                 <p className={`mt-ds-4 text-sm leading-relaxed text-lifeos-fg`}>{dailyReview.summary}</p>
               </div>
               <div className="grid gap-5 md:grid-cols-2">
                 <div>
-                  <h4 className="text-lifeos-caption font-medium text-lifeos-fg-muted">What went well</h4>
+                  <h4 className="text-lifeos-caption font-medium text-lifeos-fg-muted">{tRec("whatWentWell")}</h4>
                   <ul className="mt-2 space-y-2">
                     {dailyReview.wins.map((line, i) => (
                       <li
@@ -838,7 +841,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                   </ul>
                 </div>
                 <div>
-                  <h4 className="text-lifeos-caption font-medium text-lifeos-fg-muted">Needs attention</h4>
+                  <h4 className="text-lifeos-caption font-medium text-lifeos-fg-muted">{tRec("worthALook")}</h4>
                   <ul className="mt-2 space-y-2">
                     {dailyReview.concerns.map((line, i) => (
                       <li
@@ -852,7 +855,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                 </div>
               </div>
               <div>
-                <h4 className="text-lifeos-caption font-medium text-lifeos-fg-muted">Tomorrow</h4>
+                <h4 className="text-lifeos-caption font-medium text-lifeos-fg-muted">{tRec("tomorrow")}</h4>
                 <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-lifeos-fg">
                   {dailyReview.tomorrowPlan.map((line, i) => (
                     <li key={`tm-${i}-${line.slice(0, 24)}`} className="leading-relaxed">
@@ -868,9 +871,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
             <div className="mt-ds-6 flex flex-col gap-5 rounded-ds-card bg-lifeos-inset/90 px-8 py-8 shadow-inner sm:flex-row sm:items-start md:px-10 md:py-8">
               <Sparkles className="size-10 shrink-0 text-lifeos-accent/25 motion-safe:animate-lifeos-soft-in" strokeWidth={1.25} aria-hidden />
               <div className="min-w-0 flex-1 text-left">
-                <p className="text-lifeos-section font-semibold text-lifeos-fg">Today&apos;s review</p>
+                <p className="text-lifeos-section font-semibold text-lifeos-fg">{tRec("todaysReview")}</p>
                 <p className={`mt-4 max-w-md text-lifeos-body leading-relaxed ${ui.mutedText}`}>
-                  A short recap from tasks, focus, money, and home.
+                  {tRec("reviewEmptyDescription")}
                 </p>
                 <Button
                   variant="primary"
@@ -880,7 +883,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                   onClick={() => void generateDailyReview(false)}
                   type="button"
                 >
-                  Run review
+                  {tRec("runReview")}
                 </Button>
               </div>
             </div>
@@ -888,7 +891,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
         </div>
 
         <div className={ds.surfaces.contentPanelCompact}>
-          <h2 className="text-lifeos-card-title font-semibold tracking-tight text-lifeos-fg">Shortcuts</h2>
+          <h2 className="text-lifeos-card-title font-semibold tracking-tight text-lifeos-fg">{tRec("quickActions")}</h2>
           <div className="mt-3 grid gap-2.5">
             <Button
               variant="primary"
@@ -898,7 +901,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
               type="button"
               disabled={startingFocus}
             >
-              {startingFocus ? "Starting..." : "Start focus session"}
+              {startingFocus ? tRec("starting") : tRec("startFocusSession")}
             </Button>
             <Button
               variant="secondary"
@@ -907,7 +910,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
               onClick={() => router.push("/work/tasks")}
               type="button"
             >
-              Open tasks
+              {tRec("browseTasks")}
             </Button>
             <Button
               variant="secondary"
@@ -916,7 +919,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
               onClick={() => router.push("/finance/dashboard")}
               type="button"
             >
-              Open finances
+              {tRec("openFinances")}
             </Button>
           </div>
         </div>
@@ -938,49 +941,44 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <div className="flex flex-col gap-ds-6">
       <Surface variant="hero">
         <div className={dashboard.heroStack}>
-          <PageTitle>Control Center</PageTitle>
-          <MutedText className={ds.typography.proseMax}>See what matters and what to do next.</MutedText>
+          <PageTitle>{tOverview("today")}</PageTitle>
+          <MutedText className={ds.typography.proseMax}>{t("common.productTagline")}</MutedText>
+          {currentDream.isSet ? (
+            <CurrentDreamStrip dream={currentDream} whisper={dreamWhisper} className="mt-ds-4 max-w-lg" />
+          ) : null}
         </div>
       </Surface>
 
       <Surface variant="secondary">
         <SectionHeader
-          title="Current state"
-          description="Focus, home, finances, and energy today."
+          title={tOverview("currentState")}
+          description={tOverview("currentStateDescription")}
         />
-        <div className="mt-ds-7 grid grid-cols-2 gap-ds-3 lg:grid-cols-4">
-          {todayStateRows.map((row) => {
-            const st = systemStatusToneStyles(row.tone);
-            return (
-              <div
-                key={row.key}
-                className={`px-ds-4 py-ds-4 transition duration-200 hover:-translate-y-px ${st.shell}`}
-              >
-                <div className="flex items-center justify-between gap-ds-2">
-                  <span className="flex min-w-0 items-center gap-ds-2">
-                    <span className={st.glow}>
-                      <TodayStateIcon rowKey={row.key} />
-                    </span>
-                    <span className="truncate text-sm font-medium text-lifeos-fg-secondary">{row.title}</span>
-                  </span>
-                  <span className={`shrink-0 ${st.badge}`}>{row.statusLabel}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <CurrentStatePanel
+          className="mt-ds-7"
+          items={currentStateSnapshot.items}
+          footnote={currentStateSnapshot.footnote}
+        />
+      </Surface>
+
+      <Surface variant="secondary">
+        <SectionHeader
+          title={tOverview("patterns")}
+          description={tOverview("patternsDescription")}
+        />
+        <PatternsAtAGlance patterns={patternSnapshot} className="mt-ds-6" />
       </Surface>
 
       <Surface variant="primary">
         <SectionHeader
-          title="What to do next"
-          description="One suggestion."
+          title={tOverview("nextStep")}
+          description={tOverview("nextStepDescription")}
           action={
             <Link
               href="/dashboard/recommendations"
               className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}
             >
-              View all
+              {t("common.viewAll")}
             </Link>
           }
         />
@@ -991,19 +989,15 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
               action={primaryNextAction}
               busy={recActionBusy === primaryNextAction.id}
               layout="featured"
-              mutedTextClass={ui.mutedText}
-              formatDateTimeFiNumeric={formatDateTimeFiNumeric}
-              nextActionCategoryLabel={nextActionCategoryLabel}
-              nextActionPriorityClass={nextActionPriorityClass}
               onDismiss={() => void submitRecFeedback(primaryNextAction.id, "dismissed")}
               onImplicitIgnore={() => void submitRecFeedback(primaryNextAction.id, "ignored")}
               onPrimary={() => runRecommendationPrimaryAction(primaryNextAction)}
             />
           ) : (
             <Surface variant="inset">
-              <p className="text-lifeos-section font-semibold text-lifeos-fg">You&apos;re in good shape</p>
+              <p className="text-lifeos-section font-semibold text-lifeos-fg">{tRec("emptyTitle")}</p>
               <p className={`mt-ds-3 text-lifeos-body ${ui.mutedText}`}>
-                Nothing urgent. Check in later today.
+                {nextStepDreamNote ?? tOverview("quieterDay")}
               </p>
             </Surface>
           )}
@@ -1013,15 +1007,14 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <div className="grid grid-cols-1 gap-ds-6 lg:grid-cols-2 lg:gap-ds-8">
         <Surface variant="secondary">
           <SectionHeader
-            label="Today"
-            title="Your plan"
-            description="Up to five steps."
+            title={tOverview("yourPlan")}
+            description={tOverview("yourPlanDescription")}
             action={
               <Link
                 href="/dashboard/daily-plan"
                 className={cn(buttonVariants({ variant: "secondary", size: "md" }), "inline-flex")}
               >
-                Open list
+                {tOverview("openList")}
               </Link>
             }
           />
@@ -1051,9 +1044,6 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                       >
                         {item.title}
                       </span>
-                      <span className="mt-ds-2 text-lifeos-caption text-lifeos-fg-muted">
-                        {dailyPlanCategoryLabel(item.category)} · <span className="capitalize">{item.priority}</span> priority
-                      </span>
                     </span>
                   </label>
                 </li>
@@ -1063,9 +1053,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
             <Surface variant="inset" className="mt-ds-6 flex gap-ds-4 sm:items-center">
               <ListTodo className="size-5 shrink-0 text-lifeos-fg-muted" strokeWidth={1.75} aria-hidden />
               <div>
-                <p className="font-semibold text-lifeos-card-title text-lifeos-fg">Your plan shows up here</p>
+                <p className="font-semibold text-lifeos-card-title text-lifeos-fg">{tOverview("planEmptyTitle")}</p>
                 <p className={`mt-ds-2 text-lifeos-body ${ui.mutedText}`}>
-                  Add tasks, zones, or spending. We build this from what you log.
+                  {tOverview("planEmptyDescription")}
                 </p>
               </div>
             </Surface>
@@ -1074,15 +1064,15 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
 
         <Surface variant="primary" className="bg-lifeos-domain-risk/20 shadow-inner">
           <SectionHeader
-            title="Needs attention"
-            description="Medium and high items from the last two weeks."
+            title={tOverview("needsAttention")}
+            description={tOverview("needsAttentionDescription")}
           />
 
           {importantRiskSignals.length === 0 ? (
             <Surface variant="inset" className="mt-ds-6">
-              <p className="font-semibold text-lifeos-card-title text-lifeos-fg">All clear for now</p>
+              <p className="font-semibold text-lifeos-card-title text-lifeos-fg">{tOverview("allClear")}</p>
               <p className={`mt-ds-2 text-lifeos-body ${ui.mutedText}`}>
-                Nothing to flag yet. Keep logging tasks, focus, and money.
+                {tOverview("allClearDescription")}
               </p>
             </Surface>
           ) : (
@@ -1100,14 +1090,14 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                     </span>
                   </div>
                   <p className="mt-ds-2 text-lifeos-body leading-snug text-lifeos-fg">{r.message}</p>
-                  <WhyLine text={r.explanation ?? ""} />
+                  <WhyLine text={r.explanation ?? ""} prefix={false} />
                 </li>
               ))}
             </ul>
           )}
           {importantRiskSignals.length > 5 ? (
             <p className={`mt-ds-4 text-lifeos-caption ${ui.mutedText}`}>
-              +{importantRiskSignals.length - 5} more in Insights.
+              {tOverview("moreInInsights", { count: importantRiskSignals.length - 5 })}
             </p>
           ) : null}
         </Surface>
@@ -1115,14 +1105,14 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
 
       <Surface variant="primary">
         <SectionHeader
-          title="Today&apos;s review"
-          description="Short recap from your day. Same view under Suggestions."
+          title={tRec("todaysReview")}
+          description={tOverview("reviewAlsoUnder")}
           action={
             <Link
               href="/dashboard/recommendations"
               className={cn(buttonVariants({ variant: "ghost", size: "md" }), "inline-flex md:self-center")}
             >
-              Open
+              {t("common.open")}
             </Link>
           }
         />
@@ -1132,11 +1122,11 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
         ) : null}
 
         {dailyReview?.from_storage && !dailyReviewError ? (
-          <p className={`mt-ds-6 text-lifeos-caption ${ui.mutedText}`}>Saved earlier today.</p>
+          <p className={`mt-ds-6 text-lifeos-caption ${ui.mutedText}`}>{tOverview("savedEarlier")}</p>
         ) : null}
 
-        {dailyReview?.fallback && !dailyReviewError ? (
-          <p className="mt-ds-6 text-lifeos-body text-lifeos-warning">Simple local version for now.</p>
+          {dailyReview?.fallback && !dailyReviewError ? (
+          <p className="mt-ds-6 text-lifeos-body text-lifeos-warning">Using a simpler version saved on this device.</p>
         ) : null}
 
         {dailyReviewLoading && !dailyReview && (
@@ -1158,9 +1148,9 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
           <Surface variant="inset" className="mt-ds-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
             <Sparkles className="size-10 shrink-0 text-lifeos-accent/25 motion-safe:animate-lifeos-soft-in sm:mt-0.5" strokeWidth={1.25} aria-hidden />
             <div className="min-w-0 flex-1 text-left">
-              <p className="text-lifeos-section font-semibold text-lifeos-fg">Today&apos;s review</p>
+              <p className="text-lifeos-section font-semibold text-lifeos-fg">{tRec("todaysReview")}</p>
               <p className={`mt-3 max-w-md text-lifeos-body leading-relaxed ${ui.mutedText}`}>
-                What went well, what slowed you down, and what to watch. From what you already logged.
+                {tOverview("reviewReflectHint")}
               </p>
               <Button
                 variant="primary"
@@ -1170,7 +1160,7 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
                 onClick={() => void generateDailyReview(false)}
                 type="button"
               >
-                Run review
+                {tRec("runReview")}
               </Button>
             </div>
           </Surface>
@@ -1180,13 +1170,13 @@ export function OverviewDashboard({ tab }: { tab: DashboardTabId }) {
       <Surface variant="secondary" className="bg-lifeos-muted/25 !px-5 !py-3.5 !shadow-inner md:!px-6 md:!py-3.5">
         <div className="flex flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="min-w-0 flex-1 text-sm leading-snug text-lifeos-fg-muted md:max-w-xl md:text-lifeos-body">
-            Recent activity: tasks, focus, spending, home.
+            {tOverview("recentMoments")}
           </p>
           <Link
             href="/insights/activity"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "inline-flex shrink-0")}
           >
-            Activity log
+            {tOverview("recentActivity")}
           </Link>
         </div>
       </Surface>

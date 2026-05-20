@@ -1,12 +1,34 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import { API_URL } from "@/lib/api";
 
-const LifeOsRealtimeContext = createContext<number>(0);
+type LifeOsRealtimeContextValue = {
+  epoch: number;
+  /** Bump to refetch screens that listen to `useLifeOsRealtimeEpoch`. */
+  bump: () => void;
+};
+
+const LifeOsRealtimeContext = createContext<LifeOsRealtimeContextValue>({
+  epoch: 0,
+  bump: () => {}
+});
 
 export function useLifeOsRealtimeEpoch(): number {
-  return useContext(LifeOsRealtimeContext);
+  return useContext(LifeOsRealtimeContext).epoch;
+}
+
+export function useBumpLifeOsData(): () => void {
+  return useContext(LifeOsRealtimeContext).bump;
 }
 
 /**
@@ -16,6 +38,10 @@ export function useLifeOsRealtimeEpoch(): number {
 export function LifeOsRealtimeProvider({ children }: { children: ReactNode }) {
   const [epoch, setEpoch] = useState(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const bump = useCallback(() => {
+    setEpoch((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,9 +79,9 @@ export function LifeOsRealtimeProvider({ children }: { children: ReactNode }) {
         try {
           const json = JSON.parse(ev.data) as { type?: string };
           if (json?.type === "connected") return;
-          setEpoch((n) => n + 1);
+          bump();
         } catch {
-          setEpoch((n) => n + 1);
+          bump();
         }
       };
 
@@ -73,9 +99,9 @@ export function LifeOsRealtimeProvider({ children }: { children: ReactNode }) {
       clearTimer();
       es?.close();
     };
-  }, []);
+  }, [bump]);
 
-  const value = useMemo(() => epoch, [epoch]);
+  const value = useMemo(() => ({ epoch, bump }), [epoch, bump]);
 
   return <LifeOsRealtimeContext.Provider value={value}>{children}</LifeOsRealtimeContext.Provider>;
 }

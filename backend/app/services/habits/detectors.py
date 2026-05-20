@@ -38,9 +38,8 @@ def detect_morning_focus_habit(events: list[Any], *, lookback_days: int) -> dict
         "id": "habit-morning-focus",
         "category": "focus",
         "confidence": round(confidence, 3),
-        "frequency": f"{morning_n} of {len(relevant)} focus events between {MORNING_HOUR_START}:00–{MORNING_HOUR_END}:59 UTC "
-        f"over ~{lookback_days} days",
-        "message": "You often focus in the morning — strong anchor for deep work.",
+        "frequency": f"Often in the morning over the last ~{lookback_days} days",
+        "message": "Your mornings often become focused naturally.",
     }
 
 
@@ -73,9 +72,8 @@ def detect_cleaning_consistency_habit(events: list[Any], *, lookback_days: int) 
         "id": "habit-cleaning-consistency",
         "category": "cleaning",
         "confidence": round(confidence, 3),
-        "frequency": f"Median gap ~{median_gap:.0f} days across {len(unique_sorted)} distinct cleaning days "
-        f"({len(gaps)} intervals)",
-        "message": "Cleaning consistency habit — upkeep follows a steady rhythm.",
+        "frequency": f"Steady spacing across {len(unique_sorted)} cleaning days lately",
+        "message": "Cleaning has stayed steady lately.",
         "supportMeta": {"medianGapDays": float(round(median_gap, 2))},
     }
 
@@ -101,8 +99,8 @@ def detect_spending_category_habit(events: list[Any], *, lookback_days: int) -> 
         "id": f"habit-spend-{slug}",
         "category": "finance",
         "confidence": round(confidence, 3),
-        "frequency": f"{top_n} of {len(cats)} expense events tagged “{top_cat}”",
-        "message": f"Recurring spending pattern in category “{top_cat}”.",
+        "frequency": f"Often in “{top_cat}” lately",
+        "message": f"Spending has often centered on {top_cat}.",
         "supportMeta": {"topExpenseCategory": top_cat},
     }
 
@@ -127,7 +125,7 @@ def detect_task_completion_rhythm(events: list[Any], *, lookback_days: int) -> d
         "id": f"habit-task-hour-{peak_hour}",
         "category": "productivity",
         "confidence": round(confidence, 3),
-        "frequency": f"{peak_n} of {len(hours)} task completions around {peak_hour}:00–{next_hour}:00 (UTC)",
-        "message": f"Task completion rhythm — closures cluster near {peak_hour}:00 (UTC hour bucket).",
+        "frequency": f"Often around {peak_hour}:00–{next_hour}:00 lately",
+        "message": "You often finish tasks around a familiar time of day.",
         "supportMeta": {"peakHourUtc": peak_hour},
     }

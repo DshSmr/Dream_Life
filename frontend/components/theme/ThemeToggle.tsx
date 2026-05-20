@@ -9,7 +9,7 @@ type Props = {
 
 /**
  * Compact dark/light toggle — sets an explicit preference (not system).
- * Prefer {@link ThemePreferenceRadios} in Settings → Appearance for full control.
+ * Prefer {@link ThemePreferenceSelect} in Settings → Appearance for full control.
  */
 export function ThemeToggle({ className = "" }: Props) {
   const { resolvedTheme, toggleResolved } = useTheme();

@@ -8,6 +8,13 @@ type WithAs<E extends ElementType> = {
   children?: ReactNode;
 };
 
+/** Polymorphic typography — `as` changes the rendered element and its allowed props. */
+type TypographyPolymorphicProps<T extends ElementType> = {
+  as?: T;
+  className?: string;
+  children?: ReactNode;
+} & Omit<ComponentPropsWithoutRef<T>, "as" | "className" | "children">;
+
 export function PageTitle({
   as,
   className,
@@ -36,12 +43,12 @@ export function SectionTitle({
   );
 }
 
-export function CardTitle({
+export function CardTitle<T extends ElementType = "h3">({
   as,
   className,
   children,
   ...rest
-}: WithAs<"h3"> & ComponentPropsWithoutRef<"h3">) {
+}: TypographyPolymorphicProps<T>) {
   const Tag = (as ?? "h3") as ElementType;
   return (
     <Tag className={cn(ds.typography.cardTitle, className)} {...rest}>
@@ -80,12 +87,12 @@ export function MutedText({
 }
 
 /** Tight labels for forms and dense UI */
-export function LabelText({
+export function LabelText<T extends ElementType = "span">({
   as,
   className,
   children,
   ...rest
-}: WithAs<"span"> & ComponentPropsWithoutRef<"span">) {
+}: TypographyPolymorphicProps<T>) {
   const Tag = (as ?? "span") as ElementType;
   return (
     <Tag className={cn(ds.typography.uiLabel, className)} {...rest}>
@@ -94,14 +101,13 @@ export function LabelText({
   );
 }
 
-type MetricValueProps = {
-  as?: "p" | "span" | "dd";
-  className?: string;
-  children?: ReactNode;
-} & Omit<ComponentPropsWithoutRef<"dd">, "className" | "children">;
-
-export function MetricValue({ as = "p", className, children, ...rest }: MetricValueProps) {
-  const Tag = as as ElementType;
+export function MetricValue<T extends ElementType = "p">({
+  as,
+  className,
+  children,
+  ...rest
+}: TypographyPolymorphicProps<T>) {
+  const Tag = (as ?? "p") as ElementType;
   return (
     <Tag className={cn(ds.typography.metricValue, className)} {...rest}>
       {children}
@@ -109,14 +115,13 @@ export function MetricValue({ as = "p", className, children, ...rest }: MetricVa
   );
 }
 
-type MetricLabelProps = {
-  as?: "p" | "span" | "dt";
-  className?: string;
-  children?: ReactNode;
-} & Omit<ComponentPropsWithoutRef<"dt">, "className" | "children">;
-
-export function MetricLabel({ as = "p", className, children, ...rest }: MetricLabelProps) {
-  const Tag = as as ElementType;
+export function MetricLabel<T extends ElementType = "p">({
+  as,
+  className,
+  children,
+  ...rest
+}: TypographyPolymorphicProps<T>) {
+  const Tag = (as ?? "p") as ElementType;
   return (
     <Tag className={cn(ds.typography.metricLabel, className)} {...rest}>
       {children}

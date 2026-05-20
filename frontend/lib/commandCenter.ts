@@ -61,11 +61,19 @@ export function pickNextCleaningZone(zones: CleaningZone[]): CleaningZone | null
   })[0];
 }
 
-export function cleaningActionLabel(zone: CleaningZone): string {
-  const name = zone.name.trim() || "Zone";
-  if (zone.status === "overdue") return `${name} is overdue`;
-  if (zone.status === "soon") return `${name} is due soon`;
-  return `${name} is on track`;
+type CleaningLabelT = (key: string, values?: Record<string, string | number>) => string;
+
+/** Human line for the next cleaning area — pass `dashboard.commandCenter` translator when available. */
+export function cleaningActionLabel(zone: CleaningZone, t?: CleaningLabelT): string {
+  const name = zone.name.trim() || (t ? t("zoneFallback") : "Area");
+  if (t) {
+    if (zone.status === "overdue") return t("cleaningOverdue", { name });
+    if (zone.status === "soon") return t("cleaningSoon", { name });
+    return t("cleaningOk", { name });
+  }
+  if (zone.status === "overdue") return `${name} could use a clean`;
+  if (zone.status === "soon") return `${name} due soon`;
+  return `${name} looks good`;
 }
 
 /** Plain € amount; negative balances use a leading minus. */

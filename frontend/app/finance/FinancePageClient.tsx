@@ -1,26 +1,66 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { API_URL, FinanceKind, FinanceRangeSummary, FinanceTransaction } from "@/lib/api";
 import { formatEurPlain } from "@/lib/commandCenter";
-import { getLocalMonthRangeIso } from "@/lib/datetime";
+import { buildFinanceMonthSummary } from "@/lib/finance/summaryCopy";
+import {
+  financeMonthPanelTone,
+  moneyInValueClass,
+  signedDeltaValueClass
+} from "@/lib/semanticTone";
+import { getLocalMonthRangeIso, localCalendarDayKeyFromDate } from "@/lib/datetime";
+import {
+  buildDaySeries,
+  financeExpenseByDay,
+  financeTodaySpend,
+  largestExpenseToday,
+  lastNDayKeys,
+  topCategoriesLast7Days
+} from "@/lib/operational/metrics";
 import { ui } from "@/lib/ui";
 import { ds } from "@/styles/design-system";
 import { FormField } from "@/components/ui/FormField";
-import { BodyText, MetricLabel, MetricValue, MutedText, PageTitle } from "@/components/ui/typography";
+import { BodyText } from "@/components/ui/typography";
+import { MoneyActivityFeed } from "@/components/finance/MoneyActivityFeed";
+import {
+  ActivityRow,
+  CollapsibleQuickForm,
+  OperationalMetricBand,
+  WeeklyActivityRhythm,
+  OperationalMetricCell,
+  OperationalPageHeader,
+  OperationalStatePanel,
+  OperationalTwoColumn,
+  RecentActivityBlock
+} from "@/components/operational/OperationalPrimitives";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  useSelectStringHandler
+} from "@/components/ui/select";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useTranslations } from "@/lib/i18n";
 import { sendWithOfflineQueue } from "@/services/offlineQueue";
 import { useLifeOsRealtimeEpoch } from "@/services/realtime";
 
 export type FinanceTabVariant = "full" | "dashboard" | "transactions";
 
 export default function FinancePageClient({ variant = "full" }: { variant?: FinanceTabVariant }) {
+  const { t, locale } = useTranslations("finance");
+  const { t: tCommon } = useTranslations();
+  const [now] = useState(() => new Date());
+  const todayKey = localCalendarDayKeyFromDate(now);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [kind, setKind] = useState<FinanceKind>("expense");
+  const onKindChange = useSelectStringHandler((v) => setKind(v as FinanceKind));
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [note, setNote] = useState("");
@@ -70,13 +110,13 @@ export default function FinancePageClient({ variant = "full" }: { variant?: Fina
     setError(null);
     const parsedAmount = Number(amount);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setError("Amount must be a positive number");
-      toast.error("Amount must be a positive number");
+      setError(t("amountInvalid"));
+      toast.error(t("amountInvalid"));
       return;
     }
     if (!category.trim()) {
-      setError("Category is required");
-      toast.error("Category is required");
+      setError(t("categoryRequired"));
+      toast.error(t("categoryRequired"));
       return;
     }
     try {
@@ -94,7 +134,7 @@ export default function FinancePageClient({ variant = "full" }: { variant?: Fina
         })
       );
       if (result.mode === "queued") {
-        toast.info("Pending sync", { description: "Transaction saved locally — will upload when online." });
+        toast.info(tCommon("common.toast.savedForNow"), { description: tCommon("common.toast.savedOffline") });
         setAmount("");
         setCategory("");
         setNote("");
@@ -102,148 +142,190 @@ export default function FinancePageClient({ variant = "full" }: { variant?: Fina
         return;
       }
       if (!result.response.ok) {
-        setError("Failed to create finance transaction");
-        toast.error("Failed to create transaction");
+        setError(t("createFailed"));
+        toast.error(t("createFailed"));
         return;
       }
       setAmount("");
       setCategory("");
       setNote("");
-      toast.success("Transaction added");
+      toast.success(t("transactionAdded"));
       await Promise.all([loadTransactions(), loadMonthTotals()]);
     } catch {
-      setError("Cannot connect to API. Please check backend server.");
-      toast.error("Cannot connect to API");
+      setError(tCommon("common.toast.connectionError"));
+      toast.error(tCommon("common.toast.couldNotConnect"));
     }
   }
 
   const monthSummary = monthTotals ?? { income_total: 0, expense_total: 0, balance_delta: 0 };
   const monthHasNoTransactions = monthSummary.income_total === 0 && monthSummary.expense_total === 0;
+  const dayKeys = useMemo(() => lastNDayKeys(7), []);
+  const todaySpend = useMemo(() => financeTodaySpend(transactions), [transactions]);
+  const spendTrend = useMemo(
+    () => buildDaySeries(dayKeys, financeExpenseByDay(transactions, dayKeys)),
+    [dayKeys, transactions]
+  );
+  const topCategories = useMemo(() => topCategoriesLast7Days(transactions), [transactions]);
+  const unusual = useMemo(() => largestExpenseToday(transactions), [transactions]);
+  const monthSummaryCopy = useMemo(
+    () => buildFinanceMonthSummary(t, monthSummary.balance_delta, todaySpend, formatEurPlain),
+    [t, monthSummary.balance_delta, todaySpend]
+  );
+  const hasSpendRhythm = variant !== "dashboard" && spendTrend.some((d) => d.value > 0);
+
+  const weekdayShort = useCallback(
+    (dayKey: string) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+      if (!m) return dayKey;
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      const tag = locale === "fi" ? "fi-FI" : locale === "ru" ? "ru-RU" : "en-GB";
+      return d.toLocaleDateString(tag, { weekday: "short" }).slice(0, 2);
+    },
+    [locale]
+  );
 
   const monthMetricStrip = (
-    <div className={cn(ds.surfaces.metricBand, variant === "full" ? "mt-ds-3" : "mt-ds-4")}>
-      <div className="grid grid-cols-1 gap-x-ds-6 gap-y-ds-4 sm:grid-cols-3">
-        <div className="min-w-0 space-y-ds-1">
-          <MetricLabel>Income this month</MetricLabel>
-          <MetricValue>{formatEurPlain(monthSummary.income_total)}</MetricValue>
-        </div>
-        <div className="min-w-0 space-y-ds-1">
-          <MetricLabel>Expenses this month</MetricLabel>
-          <MetricValue>{formatEurPlain(monthSummary.expense_total)}</MetricValue>
-        </div>
-        <div className="min-w-0 space-y-ds-1">
-          <MetricLabel>Monthly balance</MetricLabel>
-          <MetricValue
-            className={monthSummary.balance_delta >= 0 ? "text-lifeos-success" : "text-lifeos-danger"}
-          >
-            {formatEurPlain(monthSummary.balance_delta)}
-          </MetricValue>
-        </div>
+    <OperationalMetricBand>
+      <div className="grid grid-cols-2 gap-ds-4 sm:grid-cols-4">
+        <OperationalMetricCell label={t("todayOut")} value={formatEurPlain(todaySpend)} />
+        <OperationalMetricCell
+          label={t("moneyIn")}
+          value={formatEurPlain(monthSummary.income_total)}
+          valueClassName={moneyInValueClass(monthSummary.income_total)}
+        />
+        <OperationalMetricCell label={t("moneyOut")} value={formatEurPlain(monthSummary.expense_total)} />
+        <OperationalMetricCell
+          label={t("leftThisMonth")}
+          value={formatEurPlain(monthSummary.balance_delta)}
+          valueClassName={signedDeltaValueClass(monthSummary.balance_delta)}
+        />
       </div>
-    </div>
+      {hasSpendRhythm ? (
+        <WeeklyActivityRhythm
+          series={spendTrend}
+          ariaLabel={t("spendRhythmAria")}
+          dayTitle={(d) => `${d.label}: €${d.value.toFixed(0)}`}
+          weekdayShort={weekdayShort}
+          todayKey={todayKey}
+        />
+      ) : null}
+    </OperationalMetricBand>
+  );
+
+  const financeStatePanel = (
+    <OperationalStatePanel title={t("thisMonth")} tone="default">
+      {monthHasNoTransactions ? (
+        <CalmEmptyState
+          tone="finance"
+          size="inline"
+          title={t("emptyTitle")}
+          description={t("emptyDescription")}
+        />
+      ) : (
+        <div className="space-y-ds-1 text-sm leading-relaxed text-lifeos-fg-secondary">
+          <p
+            className={cn(
+              "text-lifeos-fg",
+              signedDeltaValueClass(monthSummary.balance_delta)
+            )}
+          >
+            {monthSummaryCopy.primary}
+          </p>
+          <p className="text-lifeos-fg-muted">{monthSummaryCopy.secondary}</p>
+          {unusual ? (
+            <p className="pt-ds-1 text-lifeos-fg-muted">
+              {t("largestToday")} {formatEurPlain(unusual.amount)} ({unusual.category})
+            </p>
+          ) : null}
+        </div>
+      )}
+    </OperationalStatePanel>
   );
 
   const monthFootnote = (
     <BodyText as="p" className={cn("mt-ds-2", ds.typography.bodyMuted)}>
-      Totals include every transaction in your local calendar month (server aggregate), not only the list below.
+      {t("monthFootnote")}
     </BodyText>
   );
 
-  const emptyMonthHint =
-    monthHasNoTransactions ? (
-      <BodyText
-        as="p"
-        className={cn("mt-ds-3 rounded-ds-card bg-lifeos-muted/35 px-ds-3 py-ds-2 shadow-inner", ds.typography.bodySecondary)}
-      >
-        <span className="font-semibold text-lifeos-fg">No finance activity this month yet.</span> Add a row when
-        something moves.
-      </BodyText>
-    ) : null;
-
   const quickAddForm = (
-    <div className={cn(ui.formCard, "!mt-0")}>
-      <p className={cn(ds.typography.sectionEyebrow, "mb-ds-3")}>Quick add</p>
+    <CollapsibleQuickForm label={t("logTransaction")}>
       <form onSubmit={onCreateTransaction} className={cn(ui.formGrid, "gap-ds-2")}>
-        <FormField id="tx-kind" label="Type">
-          <Select value={kind} onValueChange={(v) => setKind(v as FinanceKind)}>
+        <FormField id="tx-kind" label={t("type")}>
+          <Select
+            value={kind}
+            onValueChange={onKindChange}
+            items={{ expense: t("expense"), income: t("income") }}
+          >
             <SelectTrigger id="tx-kind" className="w-full">
-              <SelectValue />
+              <SelectValue placeholder={t("type")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="expense">Expense</SelectItem>
-              <SelectItem value="income">Income</SelectItem>
+              <SelectItem value="expense">{t("expense")}</SelectItem>
+              <SelectItem value="income">{t("income")}</SelectItem>
             </SelectContent>
           </Select>
         </FormField>
-        <FormField id="tx-amount" label="Amount">
+        <FormField id="tx-amount" label={t("amount")}>
           <Input
             id="tx-amount"
             className="tabular-nums"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="120.50"
+            placeholder={t("amountPlaceholder")}
             inputMode="decimal"
           />
         </FormField>
-        <FormField id="tx-category" label="Category">
+        <FormField id="tx-category" label={t("category")}>
           <Input
             id="tx-category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            placeholder="Food, rent, salary"
+            placeholder={t("categoryPlaceholder")}
             autoComplete="off"
           />
         </FormField>
-        <FormField id="tx-note" label="Note" optional>
-          <Input id="tx-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Client dinner" autoComplete="off" />
+        <FormField id="tx-note" label={t("note")} optional>
+          <Input id="tx-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("notePlaceholder")} autoComplete="off" />
         </FormField>
         <div className="flex justify-end md:col-span-2">
           <Button className="h-10 rounded-ds-button" type="submit" variant="primary" size="md">
-            ＋ Add
+            {t("addButton")}
           </Button>
         </div>
       </form>
-    </div>
+    </CollapsibleQuickForm>
   );
 
-  const transactionsList = (
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-end justify-between gap-ds-2">
-        <h2 className={ds.typography.sectionTitle}>Recent movement</h2>
-        <span className={cn(ds.typography.caption, "tabular-nums text-lifeos-fg-muted")}>{transactions.length} rows</span>
-      </div>
-      <div className="mt-ds-3 space-y-ds-2">
-        {transactions.length === 0 && (
-          <div className={cn(ui.emptyState, "py-ds-4 text-sm")}>No transactions yet.</div>
-        )}
-        {transactions.map((t) => (
-          <div
-            key={t.id}
-            className="flex flex-wrap items-baseline justify-between gap-x-ds-4 gap-y-ds-1 rounded-ds-input bg-lifeos-muted/25 px-ds-3 py-ds-2 shadow-inner"
-          >
-            <p className={cn(ds.typography.body, "font-medium tabular-nums text-lifeos-fg")}>
-              {t.kind === "income" ? "+" : "-"}
-              {t.amount.toFixed(2)}{" "}
-              <span className="font-normal text-lifeos-fg-secondary">({t.category})</span>
-            </p>
-            <p className={cn(ds.typography.bodyMuted, "min-w-0 flex-1 text-right")}>{t.note ?? "—"}</p>
-          </div>
+  const categoryInsight =
+    topCategories.length > 0 ? (
+      <RecentActivityBlock title={t("topCategories")}>
+        {topCategories.map((c) => (
+          <ActivityRow key={c.category} primary={c.category} secondary={formatEurPlain(c.total)} />
         ))}
-      </div>
-    </div>
+      </RecentActivityBlock>
+    ) : null;
+
+  const transactionsList = (
+    <MoneyActivityFeed
+      transactions={transactions}
+      t={t}
+      title={t("recentMovement")}
+      emptyTitle={t("txEmptyTitle")}
+      emptyDescription={t("txEmptyDescription")}
+      now={now}
+      locale={locale}
+    />
   );
 
   if (variant === "dashboard") {
     return (
       <div className={ui.contentClass}>
-        <section className={cn(ui.panelClass, "space-y-ds-3")}>
-          <div>
-            <PageTitle>Finance dashboard</PageTitle>
-            <MutedText className="mt-ds-2 max-w-[62ch]">Month-to-date totals from the server.</MutedText>
-          </div>
+        <section className={cn(ui.panelClass, "space-y-ds-5")}>
+          <OperationalPageHeader title={t("dashboardTitle")} description={t("dashboardDescription")} />
           {error && <p className="text-sm text-lifeos-danger">{error}</p>}
+          {financeStatePanel}
           {monthMetricStrip}
-          {emptyMonthHint}
           {monthFootnote}
         </section>
       </div>
@@ -253,23 +335,10 @@ export default function FinancePageClient({ variant = "full" }: { variant?: Fina
   if (variant === "transactions") {
     return (
       <div className={ui.contentClass}>
-        <section className={cn(ui.panelClass, "space-y-ds-4")}>
-          <div>
-            <PageTitle>Transactions</PageTitle>
-            <MutedText className="mt-ds-2 max-w-[62ch]">Add entries and scan recent movement.</MutedText>
-          </div>
-          <div
-            className={`overflow-hidden transition-all duration-300 ${
-              transactions.length === 0 ? "max-h-10 opacity-100" : "max-h-0 opacity-0"
-            }`}
-          >
-            <p className={ui.microHint}>Tip: add income or expense as soon as it happens</p>
-          </div>
-          <div className="grid gap-ds-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,34%)] lg:items-start">
-            <div className="min-w-0 lg:pt-ds-1">{transactionsList}</div>
-            {quickAddForm}
-          </div>
+        <section className={cn(ui.panelClass, "space-y-ds-5")}>
+          <OperationalPageHeader title={t("transactionsTitle")} description={t("transactionsDescription")} />
           {error && <p className="text-sm text-lifeos-danger">{error}</p>}
+          <OperationalTwoColumn main={<>{transactionsList}{categoryInsight}</>} aside={quickAddForm} />
         </section>
       </div>
     );
@@ -277,31 +346,21 @@ export default function FinancePageClient({ variant = "full" }: { variant?: Fina
 
   return (
     <div className={ui.contentClass}>
-      <section className={cn(ui.panelClass, "space-y-ds-4")}>
-        <div>
-          <PageTitle>Finance</PageTitle>
-          <MutedText className="mt-ds-2 max-w-[62ch]">
-            Track income and expenses. Add rows as they happen so analytics stay accurate.
-          </MutedText>
-        </div>
-        <div
-          className={`overflow-hidden transition-all duration-300 ${
-            transactions.length === 0 ? "max-h-10 opacity-100" : "max-h-0 opacity-0"
-          }`}
-        >
-          <p className={ui.microHint}>Tip: add income or expense as soon as it happens</p>
-        </div>
-
-        <div className="grid gap-ds-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,32%)] lg:items-start">
-          <div className="min-w-0 space-y-ds-3">
-            {monthMetricStrip}
-            {emptyMonthHint}
-            {monthFootnote}
-            {transactionsList}
-          </div>
-          <aside className="min-w-0 lg:sticky lg:top-4">{quickAddForm}</aside>
-        </div>
+      <section className={cn(ui.panelClass, "space-y-ds-5")}>
+        <OperationalPageHeader title={t("fullTitle")} description={t("fullDescription")} />
         {error && <p className="text-sm text-lifeos-danger">{error}</p>}
+        {financeStatePanel}
+        {monthMetricStrip}
+        <OperationalTwoColumn
+          main={
+            <>
+              {categoryInsight}
+              {transactionsList}
+              {monthFootnote}
+            </>
+          }
+          aside={quickAddForm}
+        />
       </section>
     </div>
   );

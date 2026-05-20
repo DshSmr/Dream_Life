@@ -1,138 +1,112 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { API_URL, EventItem } from "@/lib/api";
+import { API_URL, type DailyReview, EventItem } from "@/lib/api";
 import { normalizeAnalyticsEvents } from "@/lib/analytics/normalize";
-import { localCalendarDayKeyFromDate } from "@/lib/datetime";
-import { buildDailyTimeline, type TimelineRow } from "@/lib/timeline";
-import { ui } from "@/lib/ui";
-import { ds } from "@/styles/design-system";
+import { LifeFlowStream } from "@/components/timeline/LifeFlowStream";
+import { CalmEmptyState } from "@/components/ui/CalmEmptyState";
 import { PageSectionSkeleton } from "@/components/ui/skeleton";
+import { MutedText, PageTitle } from "@/components/ui/typography";
+import { buildLifeFlowStream } from "@/lib/timeline";
+import { createLifeFlowT } from "@/lib/timeline/lifeFlowCopy";
+import { ds } from "@/styles/design-system";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "@/lib/i18n";
 import { useLifeOsRealtimeEpoch } from "@/services/realtime";
+import { useUserPreferencesEpoch } from "@/hooks/useUserPreferencesEpoch";
 
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
+const FLOW_DAY_SPAN_OPTIONS = [7, 14, 30] as const;
 
-function todayInputValue(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function formatDayHeading(dayKey: string): string {
-  const [ys, ms, ds] = dayKey.split("-");
-  const y = Number(ys);
-  const m = Number(ms);
-  const day = Number(ds);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) return dayKey;
-  const dt = new Date(y, m - 1, day);
-  if (Number.isNaN(dt.getTime())) return dayKey;
-  return dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-}
-
-function TimelineList({ rows }: { rows: TimelineRow[] }) {
-  return (
-    <ul className="relative ml-1 border-l border-lifeos-border pl-8">
-      {rows.map((row, i) => (
-        <li key={row.id} className={`relative ${i < rows.length - 1 ? "pb-10" : "pb-1"}`}>
-          <span
-            className="absolute -left-[5px] top-1.5 size-2.5 rounded-full bg-lifeos-accent ring-4 ring-lifeos-page"
-            aria-hidden
-          />
-          <time className="text-sm font-medium tabular-nums text-lifeos-accent" dateTime={new Date(row.atMs).toISOString()}>
-            {row.timeLabel}
-          </time>
-          <p className="mt-1 text-base font-medium leading-snug text-lifeos-fg">{row.headline}</p>
-          {row.detail ? <p className={`mt-1 text-sm leading-relaxed ${ui.mutedText}`}>{row.detail}</p> : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export default function DailyTimelinePage() {
+export default function LifeFlowPage() {
+  const { t, locale } = useTranslations("insights.lifeFlow");
+  const { t: tEmpty } = useTranslations();
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [dayKey, setDayKey] = useState(todayInputValue);
+  const [reviews, setReviews] = useState<DailyReview[]>([]);
+  const [daySpan, setDaySpan] = useState<(typeof FLOW_DAY_SPAN_OPTIONS)[number]>(14);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const realtimeEpoch = useLifeOsRealtimeEpoch();
+  const prefsEpoch = useUserPreferencesEpoch();
 
-  const loadEvents = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/events?limit=500`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load events");
-      const raw = (await res.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
+      const [eventsRes, reviewsRes] = await Promise.all([
+        fetch(`${API_URL}/events?limit=500`, { cache: "no-store" }),
+        fetch(`${API_URL}/ai/reviews?limit=30`, { cache: "no-store" })
+      ]);
+      if (!eventsRes.ok) throw new Error("events");
+      const raw = (await eventsRes.json()) as Array<Omit<EventItem, "type"> & { type: string }>;
       setEvents(normalizeAnalyticsEvents(raw));
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load events");
+      if (reviewsRes.ok) {
+        const rev = (await reviewsRes.json()) as DailyReview[];
+        setReviews(Array.isArray(rev) ? rev : []);
+      } else {
+        setReviews([]);
+      }
+    } catch {
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    void loadEvents();
-  }, [loadEvents]);
+    void load();
+  }, [load]);
 
   useEffect(() => {
     if (realtimeEpoch === 0) return;
-    void loadEvents();
-  }, [realtimeEpoch, loadEvents]);
+    void load();
+  }, [realtimeEpoch, load]);
 
-  const rows = useMemo(() => buildDailyTimeline(events, dayKey), [events, dayKey]);
+  const flowT = useMemo(() => createLifeFlowT(locale), [locale]);
 
-  const isToday = dayKey === localCalendarDayKeyFromDate(new Date());
+  const days = useMemo(
+    () => buildLifeFlowStream({ events, reviews, daySpan, locale, t: flowT }),
+    [events, reviews, daySpan, prefsEpoch, flowT, locale]
+  );
 
   return (
-    <div className={ui.contentClass}>
-      <section className={ui.panelClass}>
-        <h1 className="text-2xl font-semibold text-lifeos-fg">Daily timeline</h1>
-        <p className={ui.pageHint}>Your day as a single timeline from the event log.</p>
-        <p className={ui.microHint}>Tip: pick any calendar day; events use your local timezone.</p>
+    <div className="mx-auto w-full max-w-2xl space-y-ds-8 py-ds-2">
+      <header className="space-y-ds-2">
+        <PageTitle>{t("pageTitle")}</PageTitle>
+        <MutedText className={ds.typography.proseMax}>{t("pageDescription")}</MutedText>
+      </header>
 
-        <div className="mt-6 flex flex-wrap items-end gap-4">
-          <div className="grid gap-2">
-            <label className={ui.formLabel} htmlFor="timeline-day">
-              Day
-            </label>
-            <input
-              id="timeline-day"
-              type="date"
-              className={ui.inputClass}
-              value={dayKey}
-              onChange={(e) => setDayKey(e.target.value)}
-            />
-          </div>
-          <p className={`pb-2 text-sm ${ui.mutedText}`}>
-            {formatDayHeading(dayKey)}
-            {isToday ? " · Today" : ""}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center gap-ds-2">
+        <span className={cn(ds.typography.uiLabel, "mr-ds-1 text-lifeos-fg-muted")}>{t("showing")}</span>
+        {FLOW_DAY_SPAN_OPTIONS.map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setDaySpan(n)}
+            className={cn(
+              "rounded-full px-ds-3 py-ds-1.5 text-sm transition-colors",
+              daySpan === n
+                ? "bg-lifeos-accent/12 font-medium text-lifeos-fg"
+                : "text-lifeos-fg-muted hover:bg-lifeos-muted/40 hover:text-lifeos-fg-secondary"
+            )}
+          >
+            {t("daysOption", { days: n })}
+          </button>
+        ))}
+      </div>
 
-        {error && <p className="mt-6 text-lifeos-danger">{error}</p>}
-        {loading && (
-          <div className="mt-6">
-            <PageSectionSkeleton />
-          </div>
-        )}
+      {error ? <p className="text-sm text-lifeos-danger">{error}</p> : null}
+      {loading ? <PageSectionSkeleton /> : null}
 
-        {!loading && !error && rows.length === 0 && (
-          <div className="mt-8 rounded-xl border border-lifeos-border bg-lifeos-muted px-6 py-12 text-center">
-            <p className="text-lg font-medium text-lifeos-fg">Nothing logged this day yet</p>
-            <p className={`mt-2 text-sm ${ui.mutedText}`}>
-              Complete tasks, run focus, add expenses, or mark cleaning — they will appear here in order.
-            </p>
-          </div>
-        )}
+      {!loading && !error && days.length === 0 ? (
+          <CalmEmptyState
+            tone="timeline"
+            size="comfortable"
+            title={tEmpty("empty.lifeFlow.title")}
+            description={tEmpty("empty.lifeFlow.description")}
+          />
+      ) : null}
 
-        {!loading && !error && rows.length > 0 && (
-          <div className={`mt-8 ${ds.surfaces.contentPanel}`}>
-            <TimelineList rows={rows} />
-          </div>
-        )}
-      </section>
+      {!loading && !error && days.length > 0 ? <LifeFlowStream days={days} /> : null}
     </div>
   );
 }

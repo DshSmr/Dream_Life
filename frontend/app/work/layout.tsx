@@ -1,17 +1,17 @@
 "use client";
 
 import { SectionTabNav } from "@/components/nav/SectionTabNav";
-
-const WORK_TABS = [
-  { href: "/work/tasks", label: "Tasks" },
-  { href: "/work/focus", label: "Focus" },
-  { href: "/work/pomodoro", label: "Pomodoro" }
-] as const;
+import { useI18n } from "@/lib/i18n";
+import { WORK_TABS } from "@/lib/i18n/nav";
+import { useSectionTabs } from "@/lib/i18n/useSectionTabs";
 
 export default function WorkLayout({ children }: { children: React.ReactNode }) {
+  const tabs = useSectionTabs(WORK_TABS);
+  const { t } = useI18n();
+
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl">
-      <SectionTabNav ariaLabel="Work sections" tabs={WORK_TABS} />
+      <SectionTabNav ariaLabel={t("nav.aria.work")} tabs={tabs} />
       {children}
     </div>
   );

@@ -14,14 +14,23 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Life OS MVP",
-  description: "Unified productivity and life management system"
+  title: "Dream Life",
+  description: "A calm place to take small daily steps toward the life you want."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} bg-lifeos-page text-lifeos-fg`}>
+        <Script id="lifeos-locale-init" strategy="beforeInteractive">
+          {`(function(){
+  try {
+    var k = "lifeos-locale";
+    var loc = localStorage.getItem(k);
+    if (loc === "en" || loc === "ru" || loc === "fi") document.documentElement.lang = loc;
+  } catch (e) {}
+})();`}
+        </Script>
         <Script id="lifeos-theme-init" strategy="beforeInteractive">
           {`(function(){
   try {
@@ -31,7 +40,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     var resolved = pref === "system"
       ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
       : pref;
-    document.documentElement.setAttribute("data-theme", resolved);
+    var root = document.documentElement;
+    root.setAttribute("data-theme", resolved);
+    root.style.colorScheme = resolved;
   } catch (e) {}
 })();`}
         </Script>

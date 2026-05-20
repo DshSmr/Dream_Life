@@ -1,20 +1,17 @@
 "use client";
 
 import { SectionTabNav } from "@/components/nav/SectionTabNav";
-
-const INSIGHTS_TABS = [
-  { href: "/insights/activity", label: "Activity" },
-  { href: "/insights/timeline", label: "Timeline" },
-  { href: "/insights/review", label: "Review" },
-  { href: "/insights/monthly-review", label: "Monthly Review" },
-  { href: "/insights/ai-insight", label: "Daily insight" },
-  { href: "/insights/ai-reviews", label: "Review history" }
-] as const;
+import { useI18n } from "@/lib/i18n";
+import { INSIGHTS_TABS } from "@/lib/i18n/nav";
+import { useSectionTabs } from "@/lib/i18n/useSectionTabs";
 
 export default function InsightsLayout({ children }: { children: React.ReactNode }) {
+  const tabs = useSectionTabs(INSIGHTS_TABS);
+  const { t } = useI18n();
+
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl">
-      <SectionTabNav ariaLabel="Insights sections" tabs={INSIGHTS_TABS} />
+      <SectionTabNav ariaLabel={t("nav.aria.insights")} tabs={tabs} />
       {children}
     </div>
   );

@@ -13,64 +13,64 @@ export type AutomationRuleSettingMeta = {
 export const AUTOMATION_RULE_SETTING_CATALOG: readonly AutomationRuleSettingMeta[] = [
   {
     id: "auto-overdue-cleaning-notification",
-    name: "Overdue Cleaning Reminder",
-    description: "Notify when a cleaning zone is overdue so you can reset the space.",
+    name: "Overdue cleaning reminder",
+    description: "A gentle note when a home zone is past due.",
     category: "cleaning",
     defaultEnabled: true
   },
   {
     id: "auto-no-focus-recommendation",
-    name: "No Focus Today Recommendation",
-    description: "Suggest starting a focus session when none are logged for today.",
+    name: "No focus today",
+    description: "Suggest a short focus block when none are logged yet.",
     category: "focus",
     defaultEnabled: true
   },
   {
     id: "auto-goal-at-risk-signal",
-    name: "Goal At Risk Warning",
-    description: "Surface a signal when a weekly or monthly goal is behind.",
+    name: "Goal needs attention",
+    description: "Let you know when a weekly or monthly goal is falling behind.",
     category: "goals",
     defaultEnabled: true
   },
   {
     id: "auto-strong-productivity-insight",
-    name: "Strong Productivity Insight",
-    description: "Celebrate strong days when tasks, focus, and home health all look good.",
+    name: "Steady day note",
+    description: "A warm line when tasks, focus, and home care all look good.",
     category: "insights",
     defaultEnabled: false
   },
   {
     id: "auto-high-priority-task-notification",
-    name: "High Priority Task Reminder",
-    description: "Notify when an important task is still open.",
+    name: "Important task reminder",
+    description: "When a high-priority task is still open.",
     category: "focus",
     defaultEnabled: true
   },
   {
     id: "auto-high-spend-notification",
-    name: "High Spending Alert",
-    description: "Warn when today’s expenses cross the configured threshold.",
+    name: "Higher spending today",
+    description: "When today's expenses pass your daily limit.",
     category: "insights",
     defaultEnabled: true
   },
   {
     id: "auto-high-priority-task-recommendation",
-    name: "High Priority Task Next Step",
-    description: "Recommend tackling your top priority task next.",
+    name: "Next step: important task",
+    description: "Point you toward your top open task.",
     category: "focus",
     defaultEnabled: true
   },
   {
     id: "auto-finance-review-recommendation",
-    name: "Spending Review Suggestion",
-    description: "Suggest reviewing finance after high daily spend.",
+    name: "Check today's spending",
+    description: "After a heavier spending day.",
     category: "insights",
     defaultEnabled: true
   },
   {
     id: "auto-quiet-log-recommendation",
-    name: "Quiet Day Log Nudge",
-    description: "After 10:00, gently prompt to log an action if the day is still empty.",
+    name: "Quiet day nudge",
+    description: "After 10:00, if nothing is logged yet.",
     category: "focus",
     defaultEnabled: true
   }
@@ -78,7 +78,6 @@ export const AUTOMATION_RULE_SETTING_CATALOG: readonly AutomationRuleSettingMeta
 
 const CATALOG_IDS = new Set(AUTOMATION_RULE_SETTING_CATALOG.map((r) => r.id));
 
-/** Rules shipped in code but missing from the catalog stay enabled (safe if catalog is empty). */
-export function isKnownAutomationRuleId(ruleId: string): boolean {
-  return CATALOG_IDS.has(ruleId);
+export function isKnownAutomationRuleId(id: string): boolean {
+  return CATALOG_IDS.has(id);
 }

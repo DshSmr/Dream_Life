@@ -19,7 +19,7 @@ def enrich_detected_habit(row: dict[str, Any]) -> dict[str, Any]:
             {
                 "id": f"{hid}-start-focus-25",
                 "habitId": hid,
-                "label": "Start 25-min morning focus",
+                "label": "Try an earlier focus block tomorrow",
                 "type": "mutation",
                 "target": "focus_session_start",
                 "payload": {"label": "Morning focus (25m)"},
@@ -27,17 +27,16 @@ def enrich_detected_habit(row: dict[str, Any]) -> dict[str, Any]:
         )
 
     elif hid == "habit-cleaning-consistency":
-        gap = float(meta.get("medianGapDays") or 4.0)
         actions.append(
             {
                 "id": f"{hid}-daily-plan-clean",
                 "habitId": hid,
-                "label": "Add cleaning round to today’s plan",
+                "label": "Add a small cleaning pass to today",
                 "type": "plan_item",
                 "target": "daily_plan",
                 "payload": {
                     "planItemId": "habit-support-cleaning-rhythm",
-                    "title": f"Quick cleaning pass (~every {gap:.0f} days)",
+                    "title": "A small cleaning pass today",
                     "category": "cleaning",
                     "priority": "medium",
                 },
@@ -63,12 +62,12 @@ def enrich_detected_habit(row: dict[str, Any]) -> dict[str, Any]:
             {
                 "id": f"{hid}-plan-before-window",
                 "habitId": hid,
-                "label": "Schedule important task before your usual completion window",
+                "label": "Start with one important task in the morning",
                 "type": "plan_item",
                 "target": "daily_plan",
                 "payload": {
                     "planItemId": "habit-support-task-rhythm",
-                    "title": f"Priority task before ~{peak}:00 (your completion rhythm)",
+                    "title": "One important task for the morning",
                     "category": "task",
                     "priority": "high",
                 },

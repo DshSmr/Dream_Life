@@ -1,150 +1,419 @@
 "use client";
 
 import * as React from "react";
-import { Select as SelectPrimitive } from "@base-ui/react/select";
-
+import { createPortal } from "react-dom";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formControlClassName } from "@/lib/form-control";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { formFieldClassName } from "@/lib/form-control";
 
-const Select = SelectPrimitive.Root;
+export type SelectOption = {
+  value: string;
+  label: React.ReactNode;
+  disabled?: boolean;
+};
 
-function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
-  return <SelectPrimitive.Group data-slot="select-group" className={cn("scroll-my-1 p-1", className)} {...props} />;
+type PanelPosition = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+};
+
+type SelectContextValue = {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: SelectOption[];
+  disabled?: boolean;
+  size: "sm" | "default";
+  placeholder?: string;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  popupRef: React.RefObject<HTMLUListElement | null>;
+  panelPosition: PanelPosition | null;
+  updatePanelPosition: () => void;
+};
+
+const SelectContext = React.createContext<SelectContextValue | null>(null);
+
+function useSelectContext() {
+  const ctx = React.useContext(SelectContext);
+  if (!ctx) throw new Error("Select components must be used within <Select>");
+  return ctx;
 }
 
-function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
-  return <SelectPrimitive.Value data-slot="select-value" className={cn("flex min-w-0 flex-1 truncate text-left", className)} {...props} />;
+const selectPopupClassName = cn(
+  "fixed z-[200] overflow-hidden rounded-ds-input border border-lifeos-border-subtle/25",
+  "bg-lifeos-elevated/98 text-lifeos-fg shadow-ds-md backdrop-blur-sm",
+  "outline-none ring-1 ring-lifeos-border-subtle/10",
+  "motion-safe:animate-lifeos-soft-in"
+);
+
+const selectItemClassName = cn(
+  "grid w-full min-h-10 cursor-pointer select-none grid-cols-[1fr_auto] items-center gap-2 rounded-ds-input px-ds-3 py-2 text-left text-sm text-lifeos-fg outline-none",
+  "transition-[background-color,color] duration-lifeos-normal ease-lifeos",
+  "hover:bg-lifeos-accent-soft/55 hover:text-lifeos-accent",
+  "focus-visible:bg-lifeos-accent-soft/55 focus-visible:text-lifeos-accent",
+  "disabled:pointer-events-none disabled:opacity-40",
+  "aria-selected:font-medium aria-selected:text-lifeos-accent"
+);
+
+function normalizeItems(
+  items: Record<string, React.ReactNode> | ReadonlyArray<{ label: React.ReactNode; value: string }>
+): SelectOption[] {
+  if (Array.isArray(items)) {
+    return items.map((item) => ({
+      value: String(item.value),
+      label: item.label,
+      disabled: "disabled" in item ? Boolean((item as { disabled?: boolean }).disabled) : false
+    }));
+  }
+  return Object.entries(items).map(([value, label]) => ({ value, label }));
+}
+
+function walkSelectChildren(
+  node: React.ReactNode,
+  visit: (child: React.ReactElement) => void
+) {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement(child)) return;
+    visit(child);
+    if (child.props && typeof child.props === "object" && "children" in child.props) {
+      walkSelectChildren(child.props.children as React.ReactNode, visit);
+    }
+  });
+}
+
+function extractOptionsFromChildren(children: React.ReactNode): SelectOption[] {
+  const out: SelectOption[] = [];
+  walkSelectChildren(children, (child) => {
+    if ((child.type as { displayName?: string })?.displayName !== "SelectItem" && child.type !== SelectItem) return;
+    const { value, disabled, children: label } = child.props as {
+      value: string;
+      disabled?: boolean;
+      children?: React.ReactNode;
+    };
+    if (value != null && value !== "") {
+      out.push({ value: String(value), label: label ?? value, disabled });
+    }
+  });
+  return out;
+}
+
+function extractPlaceholder(children: React.ReactNode): string | undefined {
+  let placeholder: string | undefined;
+  walkSelectChildren(children, (child) => {
+    if (child.type !== SelectValue) return;
+    const p = (child.props as { placeholder?: string }).placeholder;
+    if (p) placeholder = p;
+  });
+  return placeholder;
+}
+
+function isInsideSelect(target: Node, trigger: HTMLButtonElement | null, popup: HTMLUListElement | null): boolean {
+  if (trigger?.contains(target)) return true;
+  if (popup?.contains(target)) return true;
+  return false;
+}
+
+export type SelectProps = {
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+  items?: Record<string, React.ReactNode> | ReadonlyArray<{ label: React.ReactNode; value: string }>;
+};
+
+function Select({ value, defaultValue, onValueChange, disabled, children, items }: SelectProps) {
+  const [uncontrolled, setUncontrolled] = React.useState(defaultValue ?? "");
+  const [open, setOpen] = React.useState(false);
+  const [panelPosition, setPanelPosition] = React.useState<PanelPosition | null>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const popupRef = React.useRef<HTMLUListElement>(null);
+  const isControlled = value !== undefined;
+  const currentValue = isControlled ? value : uncontrolled;
+
+  const extracted = React.useMemo(() => extractOptionsFromChildren(children), [children]);
+  const placeholder = React.useMemo(() => extractPlaceholder(children), [children]);
+  const options = React.useMemo(() => {
+    if (items) {
+      const fromItems = normalizeItems(items);
+      if (extracted.length === 0) return fromItems;
+      const labelByValue = new Map(fromItems.map((o) => [o.value, o.label]));
+      return extracted.map((o) => ({
+        ...o,
+        label: labelByValue.get(o.value) ?? o.label
+      }));
+    }
+    return extracted;
+  }, [items, extracted]);
+
+  const updatePanelPosition = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const gap = 4;
+    const preferredMax = 240;
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const spaceAbove = rect.top - gap;
+
+    let maxHeight = preferredMax;
+    let top = rect.bottom + gap;
+
+    if (spaceBelow < preferredMax && spaceAbove > spaceBelow) {
+      maxHeight = Math.min(preferredMax, Math.max(120, spaceAbove));
+      top = Math.max(gap, rect.top - gap - maxHeight);
+    } else {
+      maxHeight = Math.min(preferredMax, Math.max(120, spaceBelow));
+    }
+
+    setPanelPosition({
+      top,
+      left: rect.left,
+      width: rect.width,
+      maxHeight
+    });
+  }, []);
+
+  const handleChange = React.useCallback(
+    (next: string) => {
+      if (!isControlled) setUncontrolled(next);
+      onValueChange?.(next);
+      setOpen(false);
+    },
+    [isControlled, onValueChange]
+  );
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    updatePanelPosition();
+  }, [open, updatePanelPosition, options.length]);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (isInsideSelect(target, triggerRef.current, popupRef.current)) return;
+      setOpen(false);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    function onReposition() {
+      updatePanelPosition();
+    }
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open, updatePanelPosition]);
+
+  return (
+    <SelectContext.Provider
+      value={{
+        value: currentValue,
+        onValueChange: handleChange,
+        options,
+        disabled,
+        size: "default",
+        placeholder,
+        open,
+        setOpen,
+        triggerRef,
+        popupRef,
+        panelPosition,
+        updatePanelPosition
+      }}
+    >
+      <div className="relative w-full">{children}</div>
+    </SelectContext.Provider>
+  );
 }
 
 function SelectTrigger({
+  id,
   className,
   size = "default",
   invalid,
   children,
   "aria-invalid": ariaInvalid,
   ...props
-}: SelectPrimitive.Trigger.Props & {
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "size" | "value" | "defaultValue" | "onChange"> & {
   size?: "sm" | "default";
   invalid?: boolean;
+  children?: React.ReactNode;
 }) {
+  const ctx = useSelectContext();
   const isInvalid = Boolean(invalid) || ariaInvalid === true || ariaInvalid === "true";
+
   return (
-    <SelectPrimitive.Trigger
-      data-slot="select-trigger"
-      data-size={size}
+    <button
+      {...props}
+      ref={ctx.triggerRef}
+      type="button"
+      id={id}
+      disabled={ctx.disabled}
       aria-invalid={isInvalid || undefined}
+      aria-haspopup="listbox"
+      aria-expanded={ctx.open}
+      onClick={(e) => {
+        props.onClick?.(e);
+        if (ctx.disabled) return;
+        const next = !ctx.open;
+        ctx.setOpen(next);
+        if (next) ctx.updatePanelPosition();
+      }}
       className={cn(
-        formControlClassName(isInvalid ? "invalid" : "default"),
-        "flex items-center justify-between gap-ds-2 text-left select-none",
-        "data-placeholder:text-lifeos-fg-muted [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        size === "default" && "h-12 pr-ds-3",
-        size === "sm" && "h-10 rounded-ds-input pr-ds-2 text-xs",
+        formFieldClassName(isInvalid ? "invalid" : "default"),
+        "relative w-full cursor-pointer justify-between gap-2 pr-10 text-left",
+        size === "sm" && "h-10 min-h-10 text-xs",
+        ctx.open && "ring-2 ring-focus ring-offset-2 ring-offset-lifeos-page",
         className
       )}
-      {...props}
     >
-      {children}
-      <SelectPrimitive.Icon render={<ChevronDownIcon className="size-4 shrink-0 text-lifeos-fg-muted" />} />
-    </SelectPrimitive.Trigger>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <ChevronDownIcon
+        className={cn(
+          "pointer-events-none absolute top-1/2 right-3 size-4 shrink-0 -translate-y-1/2 text-lifeos-fg-muted transition-transform duration-200 ease-lifeos",
+          ctx.open && "rotate-180"
+        )}
+        aria-hidden
+      />
+    </button>
   );
 }
 
-function SelectContent({
-  className,
+function SelectValue({ placeholder, className }: { placeholder?: string; className?: string }) {
+  const ctx = useSelectContext();
+  const selected = ctx.options.find((o) => o.value === ctx.value);
+  const text = selected?.label ?? placeholder ?? "";
+
+  return (
+    <span className={cn("block truncate text-sm text-lifeos-fg", !selected && placeholder && "text-lifeos-fg-muted", className)}>
+      {text}
+    </span>
+  );
+}
+SelectValue.displayName = "SelectValue";
+
+function SelectContent({ children, className }: { children?: React.ReactNode; className?: string }) {
+  const ctx = useSelectContext();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!ctx.open || !mounted || !ctx.panelPosition) return null;
+
+  const listChildren =
+    children ??
+    ctx.options.map((option) => (
+      <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+        {option.label}
+      </SelectItem>
+    ));
+
+  const panel = (
+    <ul
+      ref={ctx.popupRef}
+      role="listbox"
+      style={{
+        top: ctx.panelPosition.top,
+        left: ctx.panelPosition.left,
+        width: ctx.panelPosition.width,
+        maxHeight: ctx.panelPosition.maxHeight
+      }}
+      className={cn(
+        selectPopupClassName,
+        "list-none overflow-y-auto overscroll-contain p-1",
+        className
+      )}
+      onWheel={(e) => e.stopPropagation()}
+    >
+      {listChildren}
+    </ul>
+  );
+
+  return createPortal(panel, document.body);
+}
+SelectContent.displayName = "SelectContent";
+
+function SelectItem({
+  value,
+  disabled,
   children,
-  side = "bottom",
-  sideOffset = 4,
-  align = "start",
-  alignOffset = 0,
-  alignItemWithTrigger = false,
-  ...props
-}: SelectPrimitive.Popup.Props &
-  Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger">) {
+  className
+}: {
+  value: string;
+  children?: React.ReactNode;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const ctx = useSelectContext();
+  const selected = ctx.value === value;
+
   return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Backdrop className="fixed inset-0 z-[260] bg-transparent" />
-      <SelectPrimitive.Positioner
-        side={side}
-        sideOffset={sideOffset}
-        align={align}
-        alignOffset={alignOffset}
-        alignItemWithTrigger={alignItemWithTrigger}
-        className="isolate z-[270]"
+    <li role="presentation" className="list-none">
+      <button
+        type="button"
+        role="option"
+        aria-selected={selected}
+        disabled={disabled || ctx.disabled}
+        className={cn(selectItemClassName, className)}
+        onClick={() => {
+          if (disabled || ctx.disabled) return;
+          ctx.onValueChange(value);
+        }}
       >
-        <SelectPrimitive.Popup
-          data-slot="select-content"
-          data-align-trigger={alignItemWithTrigger}
-          className={cn(
-            "relative isolate z-50 max-h-(--available-height) min-w-(--anchor-width) max-w-[min(100vw-1.5rem,var(--available-width))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-ds-input bg-lifeos-elevated py-1 text-lifeos-fg shadow-ds-md ring-0",
-            "duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-            className
-          )}
-          {...props}
-        >
-          <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
-          <SelectScrollDownButton />
-        </SelectPrimitive.Popup>
-      </SelectPrimitive.Positioner>
-    </SelectPrimitive.Portal>
+        <span className="min-w-0 truncate">{children}</span>
+        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+          {selected ? <CheckIcon className="size-3.5 text-lifeos-accent" /> : null}
+        </span>
+      </button>
+    </li>
   );
 }
+SelectItem.displayName = "SelectItem";
 
-function SelectLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
-  return (
-    <SelectPrimitive.GroupLabel data-slot="select-label" className={cn("px-ds-3 py-ds-2 text-lifeos-caption text-lifeos-fg-muted", className)} {...props} />
-  );
+function SelectGroup(_props: { children?: React.ReactNode; className?: string }) {
+  return null;
 }
 
-function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
-  return (
-    <SelectPrimitive.Item
-      data-slot="select-item"
-      className={cn(
-        "relative flex w-full cursor-default items-center gap-ds-2 rounded-lg py-ds-2 pr-8 pl-ds-3 text-sm text-lifeos-fg outline-none select-none",
-        "data-[highlighted]:bg-lifeos-hover data-[highlighted]:text-lifeos-fg",
-        "data-disabled:pointer-events-none data-disabled:opacity-45",
-        className
-      )}
-      {...props}
-    >
-      <SelectPrimitive.ItemText className="flex min-w-0 flex-1 gap-ds-2">{children}</SelectPrimitive.ItemText>
-      <SelectPrimitive.ItemIndicator className="pointer-events-none absolute right-ds-2 flex size-4 items-center justify-center text-lifeos-accent">
-        <CheckIcon className="size-4" />
-      </SelectPrimitive.ItemIndicator>
-    </SelectPrimitive.Item>
-  );
+function SelectLabel(_props: { children?: React.ReactNode; className?: string }) {
+  return null;
 }
 
-function SelectSeparator({ className, ...props }: SelectPrimitive.Separator.Props) {
-  return <SelectPrimitive.Separator data-slot="select-separator" className={cn("-mx-1 my-1 h-px bg-lifeos-border-subtle", className)} {...props} />;
+function SelectSeparator() {
+  return null;
 }
 
-function SelectScrollUpButton({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.ScrollUpArrow>) {
-  return (
-    <SelectPrimitive.ScrollUpArrow
-      data-slot="select-scroll-up-button"
-      className={cn("top-0 z-10 flex w-full cursor-default items-center justify-center bg-lifeos-card py-1 text-lifeos-fg-muted", className)}
-      {...props}
-    >
-      <ChevronUpIcon className="size-4" />
-    </SelectPrimitive.ScrollUpArrow>
-  );
+function SelectScrollUpButton() {
+  return null;
 }
 
-function SelectScrollDownButton({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.ScrollDownArrow>) {
-  return (
-    <SelectPrimitive.ScrollDownArrow
-      data-slot="select-scroll-down-button"
-      className={cn(
-        "bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-lifeos-card py-1 text-lifeos-fg-muted",
-        className
-      )}
-      {...props}
-    >
-      <ChevronDownIcon className="size-4" />
-    </SelectPrimitive.ScrollDownArrow>
+function SelectScrollDownButton() {
+  return null;
+}
+
+export function useSelectStringHandler(setValue: (next: string) => void) {
+  return React.useCallback(
+    (value: unknown) => {
+      if (typeof value === "string") setValue(value);
+    },
+    [setValue]
   );
 }
 
