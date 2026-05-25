@@ -6,7 +6,9 @@ Dream Life connects work, focus, home routines, finances, reflections, and patte
 
 ## Demo
 
-<video src="assets/demo/dream-life-demo.mp4" controls width="100%"></video>
+![Dream Life Demo](assets/demo/dream-life-demo.gif)
+
+[Watch Full Demo](assets/demo/dream-life-demo.mp4)
 
 [Watch demo video](assets/demo/dream-life-demo.mp4)
 
